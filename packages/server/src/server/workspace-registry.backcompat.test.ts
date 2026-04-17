@@ -21,19 +21,17 @@ describe("ExecutionHost backward compatibility", () => {
 
   test("legacy projects.json without executionHost loads as local", async () => {
     const file = path.join(tmpDir, "projects.json");
-    const legacy = {
-      projects: [
-        {
-          projectId: "p1",
-          rootPath: "/tmp/p1",
-          kind: "git" as const,
-          displayName: "p1",
-          createdAt: "2024-01-01T00:00:00.000Z",
-          updatedAt: "2024-01-01T00:00:00.000Z",
-          archivedAt: null,
-        },
-      ],
-    };
+    const legacy = [
+      {
+        projectId: "p1",
+        rootPath: "/tmp/p1",
+        kind: "git" as const,
+        displayName: "p1",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        archivedAt: null,
+      },
+    ];
     await fs.writeFile(file, JSON.stringify(legacy));
 
     const registry = new FileBackedProjectRegistry(file, createTestLogger());
