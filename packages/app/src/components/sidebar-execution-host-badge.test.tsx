@@ -13,7 +13,6 @@ describe("SidebarExecutionHostBadge", () => {
   test("renders nothing visible for local host but includes test id", () => {
     const markup = renderToStaticMarkup(<SidebarExecutionHostBadge host={{ kind: "local" }} />);
 
-    expect(markup).toContain('data-testid="sidebar-execution-host-badge"');
-    expect(markup).not.toMatch(/ssh/i);
+    expect(markup).toMatch(/^<view[^>]*data-testid="sidebar-execution-host-badge"[^>]*><\/view>$/);
   });
 });
