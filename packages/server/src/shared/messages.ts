@@ -1926,6 +1926,7 @@ export const WorkspaceDescriptorPayloadSchema = z.object({
   name: z.string(),
   status: WorkspaceStateBucketSchema,
   activityAt: z.string().nullable(),
+  executionHost: ExecutionHostSchema.default({ kind: "local" as const }),
   diffStat: z
     .object({
       additions: z.number(),

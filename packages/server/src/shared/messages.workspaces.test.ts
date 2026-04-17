@@ -1,6 +1,22 @@
 import { z } from "zod";
 import { describe, expect, test } from "vitest";
-import { SessionInboundMessageSchema, SessionOutboundMessageSchema } from "./messages.js";
+import {
+  SessionInboundMessageSchema,
+  SessionOutboundMessageSchema,
+  WorkspaceDescriptorPayloadSchema,
+} from "./messages.js";
+
+const BASE_DESCRIPTOR = {
+  id: "w1",
+  projectId: "p1",
+  projectDisplayName: "p",
+  projectRootPath: "/tmp/p",
+  projectKind: "git" as const,
+  workspaceKind: "local_checkout" as const,
+  name: "main",
+  status: "done" as const,
+  activityAt: null,
+};
 
 describe("workspace message schemas", () => {
   test("parses fetch_workspaces_request", () => {
@@ -339,5 +355,20 @@ describe("workspace message schemas", () => {
 
     const checkout = result.data.payload.entries[0]?.project.checkout;
     expect(checkout?.worktreeRoot).toBe("C:\\repo");
+  });
+});
+
+describe("WorkspaceDescriptorPayload executionHost", () => {
+  test("defaults to local when missing (old daemon → new client)", () => {
+    const parsed = WorkspaceDescriptorPayloadSchema.parse(BASE_DESCRIPTOR);
+    expect(parsed.executionHost).toEqual({ kind: "local" });
+  });
+
+  test("accepts explicit local", () => {
+    const parsed = WorkspaceDescriptorPayloadSchema.parse({
+      ...BASE_DESCRIPTOR,
+      executionHost: { kind: "local" },
+    });
+    expect(parsed.executionHost).toEqual({ kind: "local" });
   });
 });

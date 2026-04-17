@@ -34,6 +34,7 @@ import {
   type ProjectPlacementPayload,
   type WorkspaceDescriptorPayload,
   type WorkspaceStateBucket,
+  defaultExecutionHost,
 } from "./messages.js";
 import type { ExecutionHost } from "../shared/messages.js";
 import type { TerminalManager, TerminalsChangedEvent } from "../terminal/terminal-manager.js";
@@ -5230,6 +5231,7 @@ export class Session {
       name: workspace.displayName,
       status: "done",
       activityAt: null,
+      executionHost: resolvedProjectRecord?.executionHost ?? defaultExecutionHost(),
       diffStat: null,
     };
   }
