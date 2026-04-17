@@ -62,6 +62,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { SyncedLoader } from "@/components/synced-loader";
+import { SidebarExecutionHostBadge } from "@/components/sidebar-execution-host-badge";
 import { useToast } from "@/contexts/toast-context";
 import { useCheckoutGitActionsStore } from "@/stores/checkout-git-actions-store";
 import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
@@ -801,6 +802,7 @@ function ProjectHeaderRow({
           <Text style={styles.projectTitle} numberOfLines={1}>
             {displayName}
           </Text>
+          <SidebarExecutionHostBadge host={project.executionHost} />
         </View>
       </View>
       <View style={styles.projectTrailingActions}>
