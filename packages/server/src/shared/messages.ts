@@ -204,6 +204,14 @@ const McpServerConfigSchema = z.discriminatedUnion("type", [
   McpSseServerConfigSchema,
 ]);
 
+export const ExecutionHostSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("local") }),
+]);
+
+export function defaultExecutionHost(): z.infer<typeof ExecutionHostSchema> {
+  return { kind: "local" };
+}
+
 const AgentSessionConfigSchema = z.object({
   provider: AgentProviderSchema,
   cwd: z.string(),
@@ -2883,6 +2891,7 @@ export type ServerVoiceCapabilities = z.infer<typeof ServerVoiceCapabilitiesSche
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ServerInfoStatusPayload = z.infer<typeof ServerInfoStatusPayloadSchema>;
 export type RpcErrorMessage = z.infer<typeof RpcErrorMessageSchema>;
+export type ExecutionHost = z.infer<typeof ExecutionHostSchema>;
 export type ArtifactMessage = z.infer<typeof ArtifactMessageSchema>;
 export type AgentUpdateMessage = z.infer<typeof AgentUpdateMessageSchema>;
 export type AgentStreamMessage = z.infer<typeof AgentStreamMessageSchema>;
