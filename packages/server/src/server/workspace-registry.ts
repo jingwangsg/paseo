@@ -64,6 +64,7 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
   private readonly logger: Logger;
   private readonly schema: z.ZodType<TRecord, z.ZodTypeDef, unknown>;
   private readonly getId: (record: TRecord) => string;
+  private readonly legacyEnvelopeKey?: string;
   private loaded = false;
   private readonly cache = new Map<string, TRecord>();
   private persistQueue: Promise<void> = Promise.resolve();
@@ -74,10 +75,12 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
     schema: z.ZodType<TRecord, z.ZodTypeDef, unknown>;
     getId: (record: TRecord) => string;
     component: string;
+    legacyEnvelopeKey?: string;
   }) {
     this.filePath = options.filePath;
     this.schema = options.schema;
     this.getId = options.getId;
+    this.legacyEnvelopeKey = options.legacyEnvelopeKey;
     this.logger = options.logger.child({
       module: "workspace-registry",
       component: options.component,
@@ -145,7 +148,7 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
     this.cache.clear();
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = z.array(this.schema).parse(JSON.parse(raw));
+      const parsed = this.parseRecordsJson(JSON.parse(raw));
       for (const record of parsed) {
         this.cache.set(this.getId(record), record);
       }
@@ -156,6 +159,21 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
       }
     }
     this.loaded = true;
+  }
+
+  private parseRecordsJson(raw: unknown): TRecord[] {
+    const recordsSchema = z.array(this.schema);
+    if (this.legacyEnvelopeKey) {
+      const legacyEnvelope = z.object({
+        [this.legacyEnvelopeKey]: recordsSchema,
+      });
+      const wrapped = legacyEnvelope.safeParse(raw);
+      if (wrapped.success) {
+        return wrapped.data[this.legacyEnvelopeKey];
+      }
+    }
+
+    return recordsSchema.parse(raw);
   }
 
   private async persist(): Promise<void> {
@@ -184,6 +202,7 @@ export class FileBackedProjectRegistry
       schema: PersistedProjectRecordSchema,
       getId: (record) => record.projectId,
       component: "projects",
+      legacyEnvelopeKey: "projects",
     });
   }
 }
@@ -199,6 +218,7 @@ export class FileBackedWorkspaceRegistry
       schema: PersistedWorkspaceRecordSchema,
       getId: (record) => record.workspaceId,
       component: "workspaces",
+      legacyEnvelopeKey: "workspaces",
     });
   }
 }
