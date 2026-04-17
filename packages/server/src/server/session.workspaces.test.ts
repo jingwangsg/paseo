@@ -1984,6 +1984,62 @@ describe("workspace aggregation", () => {
     expect(descriptors).toEqual([baselineDescriptor]);
   });
 
+  test("fetch_workspaces_response emits executionHost from the persisted project record", async () => {
+    const emitted: Array<{ type: string; payload: any }> = [];
+    const session = createSessionForWorkspaceTests() as any;
+    let executionHostReads = 0;
+    const project = new Proxy(
+      createPersistedProjectRecord({
+        projectId: "/tmp/repo",
+        rootPath: "/tmp/repo",
+        kind: "non_git",
+        displayName: "repo",
+        createdAt: "2026-03-01T12:00:00.000Z",
+        updatedAt: "2026-03-01T12:00:00.000Z",
+        executionHost: { kind: "local" },
+      }),
+      {
+        get(target, property, receiver) {
+          if (property === "executionHost") {
+            executionHostReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    ) as ReturnType<typeof createPersistedProjectRecord>;
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: "/tmp/repo",
+      projectId: project.projectId,
+      cwd: "/tmp/repo",
+      kind: "directory",
+      displayName: "repo",
+      createdAt: "2026-03-01T12:00:00.000Z",
+      updatedAt: "2026-03-01T12:00:00.000Z",
+    });
+
+    session.emit = (message: any) => emitted.push(message);
+    session.listAgentPayloads = async () => [];
+    session.projectRegistry.list = async () => [project];
+    session.workspaceRegistry.list = async () => [workspace];
+
+    await session.handleMessage({
+      type: "fetch_workspaces_request",
+      requestId: "req-fetch-workspaces-execution-host",
+    });
+
+    const response = emitted.find((message) => message.type === "fetch_workspaces_response") as
+      | { type: "fetch_workspaces_response"; payload: any }
+      | undefined;
+
+    expect(executionHostReads).toBeGreaterThan(0);
+    expect(response?.payload.entries).toEqual([
+      expect.objectContaining({
+        id: "/tmp/repo",
+        executionHost: { kind: "local" },
+      }),
+    ]);
+  });
+
   test("fetch_workspaces_response reads runtime fields from passive workspace git service snapshots", async () => {
     const emitted: Array<{ type: string; payload: any }> = [];
     const runtimeSnapshot = createWorkspaceRuntimeSnapshot("/tmp/repo", {

@@ -5231,6 +5231,7 @@ export class Session {
       name: workspace.displayName,
       status: "done",
       activityAt: null,
+      executionHost: resolvedProjectRecord?.executionHost,
       diffStat: null,
     };
   }
