@@ -11,6 +11,7 @@ import {
   FileBackedProjectRegistry,
   FileBackedWorkspaceRegistry,
 } from "./workspace-registry.js";
+import { PersistedProjectRecordSchema } from "./workspace-registry.js";
 
 describe("workspace registries", () => {
   let tmpDir: string;
@@ -102,5 +103,46 @@ describe("workspace registries", () => {
     await workspaceRegistry.remove("/tmp/repo");
     expect(await workspaceRegistry.get("/tmp/repo")).toBeNull();
     expect(await workspaceRegistry.list()).toEqual([]);
+  });
+});
+
+describe("PersistedProjectRecord executionHost", () => {
+  test("loads legacy project record without executionHost as local", () => {
+    const legacy = {
+      projectId: "p1",
+      rootPath: "/tmp/p1",
+      kind: "git" as const,
+      displayName: "p1",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      archivedAt: null,
+    };
+    const parsed = PersistedProjectRecordSchema.parse(legacy);
+    expect(parsed.executionHost).toEqual({ kind: "local" });
+  });
+
+  test("createPersistedProjectRecord defaults executionHost to local", () => {
+    const record = createPersistedProjectRecord({
+      projectId: "p1",
+      rootPath: "/tmp/p1",
+      kind: "git",
+      displayName: "p1",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    });
+    expect(record.executionHost).toEqual({ kind: "local" });
+  });
+
+  test("createPersistedProjectRecord accepts explicit executionHost", () => {
+    const record = createPersistedProjectRecord({
+      projectId: "p1",
+      rootPath: "/tmp/p1",
+      kind: "git",
+      displayName: "p1",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      executionHost: { kind: "local" },
+    });
+    expect(record.executionHost).toEqual({ kind: "local" });
   });
 });

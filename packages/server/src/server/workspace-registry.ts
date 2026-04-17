@@ -5,9 +5,14 @@ import path from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 
+import {
+  ExecutionHostSchema,
+  defaultExecutionHost,
+  type ExecutionHost,
+} from "../shared/messages.js";
 import type { PersistedProjectKind, PersistedWorkspaceKind } from "./workspace-registry-model.js";
 
-const PersistedProjectRecordSchema = z.object({
+export const PersistedProjectRecordSchema = z.object({
   projectId: z.string(),
   rootPath: z.string(),
   kind: z.enum(["git", "non_git"]),
@@ -15,6 +20,7 @@ const PersistedProjectRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),
+  executionHost: ExecutionHostSchema.default({ kind: "local" as const }),
 });
 
 const PersistedWorkspaceRecordSchema = z.object({
@@ -56,7 +62,7 @@ type RegistryRecord = PersistedProjectRecord | PersistedWorkspaceRecord;
 class FileBackedRegistry<TRecord extends RegistryRecord> {
   private readonly filePath: string;
   private readonly logger: Logger;
-  private readonly schema: z.ZodSchema<TRecord>;
+  private readonly schema: z.ZodType<TRecord, z.ZodTypeDef, unknown>;
   private readonly getId: (record: TRecord) => string;
   private loaded = false;
   private readonly cache = new Map<string, TRecord>();
@@ -65,7 +71,7 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
   constructor(options: {
     filePath: string;
     logger: Logger;
-    schema: z.ZodSchema<TRecord>;
+    schema: z.ZodType<TRecord, z.ZodTypeDef, unknown>;
     getId: (record: TRecord) => string;
     component: string;
   }) {
@@ -205,10 +211,12 @@ export function createPersistedProjectRecord(input: {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
+  executionHost?: ExecutionHost;
 }): PersistedProjectRecord {
   return PersistedProjectRecordSchema.parse({
     ...input,
     archivedAt: input.archivedAt ?? null,
+    executionHost: input.executionHost ?? defaultExecutionHost(),
   });
 }
 
