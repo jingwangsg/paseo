@@ -3242,6 +3242,11 @@ export const WSOutboundMessageSchema = z.discriminatedUnion("type", [
 
 export type WSInboundMessage = z.infer<typeof WSInboundMessageSchema>;
 export type WSOutboundMessage = z.infer<typeof WSOutboundMessageSchema>;
+export type WSSessionOutboundMessageInput = {
+  type: "session";
+  message: SessionOutboundMessageInput;
+};
+export type WSOutboundMessageInput = { type: "pong" } | WSSessionOutboundMessageInput;
 export type WSHelloMessage = z.infer<typeof WSHelloMessageSchema>;
 
 // ============================================================================
@@ -3263,11 +3268,13 @@ export function extractSessionMessage(wsMsg: WSInboundMessage): SessionInboundMe
 /**
  * Wrap session message in WebSocket envelope
  */
-export function wrapSessionMessage(sessionMsg: SessionOutboundMessageInput): WSOutboundMessage {
+export function wrapSessionMessage(
+  sessionMsg: SessionOutboundMessageInput,
+): WSSessionOutboundMessageInput {
   return {
     type: "session",
-    message: sessionMsg as SessionOutboundMessage,
-  } as WSOutboundMessage;
+    message: sessionMsg,
+  };
 }
 
 export function parseServerInfoStatusPayload(payload: unknown): ServerInfoStatusPayload | null {

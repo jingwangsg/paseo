@@ -19,7 +19,7 @@ import {
   WSInboundMessageSchema,
   type ServerCapabilityState,
   type ServerCapabilities,
-  type WSOutboundMessage,
+  type WSOutboundMessageInput,
   wrapSessionMessage,
 } from "./messages.js";
 import { asUint8Array, decodeTerminalStreamFrame } from "../shared/terminal-stream-protocol.js";
@@ -478,7 +478,7 @@ export class VoiceAssistantWebSocketServer {
     this.logger.info("WebSocket server initialized on /ws");
   }
 
-  public broadcast(message: WSOutboundMessage): void {
+  public broadcast(message: WSOutboundMessageInput): void {
     const payload = JSON.stringify(message);
     for (const ws of this.sessions.keys()) {
       // WebSocket.OPEN = 1
@@ -581,7 +581,7 @@ export class VoiceAssistantWebSocketServer {
     this.wss.close();
   }
 
-  private sendToClient(ws: WebSocketLike, message: WSOutboundMessage): void {
+  private sendToClient(ws: WebSocketLike, message: WSOutboundMessageInput): void {
     // WebSocket.OPEN = 1
     if (ws.readyState === 1) {
       ws.send(JSON.stringify(message));
@@ -595,7 +595,7 @@ export class VoiceAssistantWebSocketServer {
     ws.send(frame);
   }
 
-  private sendToConnection(connection: SessionConnection, message: WSOutboundMessage): void {
+  private sendToConnection(connection: SessionConnection, message: WSOutboundMessageInput): void {
     for (const ws of connection.sockets) {
       this.sendToClient(ws, message);
     }
@@ -862,7 +862,7 @@ export class VoiceAssistantWebSocketServer {
     };
   }
 
-  private createServerInfoMessage(): WSOutboundMessage {
+  private createServerInfoMessage(): WSOutboundMessageInput {
     return {
       type: "session",
       message: {
@@ -872,7 +872,7 @@ export class VoiceAssistantWebSocketServer {
     };
   }
 
-  private createDaemonConfigChangedMessage(config: MutableDaemonConfig): WSOutboundMessage {
+  private createDaemonConfigChangedMessage(config: MutableDaemonConfig): WSOutboundMessageInput {
     return wrapSessionMessage({
       type: "status",
       payload: {
