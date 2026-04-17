@@ -1380,31 +1380,43 @@ describe("workspace aggregation", () => {
     expect(record.executionHost).toEqual({ kind: "local" });
   });
 
-  test("reconcileWorkspaceRecord passes through executionHost for an existing project", async () => {
+  test("reconcileWorkspaceRecord preserves executionHost on the persisted project update", async () => {
     const session = createSessionForWorkspaceTests() as any;
     const projects = new Map<string, ReturnType<typeof createPersistedProjectRecord>>();
     const workspaces = new Map<string, ReturnType<typeof createPersistedWorkspaceRecord>>();
-    const existing = createPersistedProjectRecord({
-      projectId: "project:/tmp/repo",
-      rootPath: "/tmp/repo",
-      kind: "non_git",
-      displayName: "old repo",
-      createdAt: "2024-01-01T00:00:00.000Z",
-      updatedAt: "2024-01-01T00:00:00.000Z",
-      executionHost: { kind: "local" },
-    });
-    projects.set(existing.projectId, existing);
-
-    const originalBuildPersistedProjectRecord = session.buildPersistedProjectRecord.bind(session);
-    const buildPersistedProjectRecordSpy = vi.fn((input: any) =>
-      originalBuildPersistedProjectRecord(input),
+    const projectUpserts: Array<ReturnType<typeof createPersistedProjectRecord>> = [];
+    let kindReads = 0;
+    const executionHost = new Proxy(
+      { kind: "local" as const },
+      {
+        get(target, property, receiver) {
+          if (property === "kind") {
+            kindReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
     );
-    session.buildPersistedProjectRecord = buildPersistedProjectRecordSpy;
+    const existing = {
+      ...createPersistedProjectRecord({
+        projectId: "project:/tmp/repo",
+        rootPath: "/tmp/repo",
+        kind: "non_git",
+        displayName: "repo",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        executionHost: { kind: "local" },
+      }),
+      executionHost,
+    } satisfies ReturnType<typeof createPersistedProjectRecord>;
+    kindReads = 0;
+    projects.set(existing.projectId, existing);
 
     session.projectRegistry.get = async (projectId: string) => projects.get(projectId) ?? null;
     session.projectRegistry.upsert = async (
       record: ReturnType<typeof createPersistedProjectRecord>,
     ) => {
+      projectUpserts.push(record);
       projects.set(record.projectId, record);
     };
     session.workspaceRegistry.get = async (workspaceId: string) =>
@@ -1436,11 +1448,10 @@ describe("workspace aggregation", () => {
       requestId: "r1",
     });
 
-    expect(buildPersistedProjectRecordSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        executionHost: existing.executionHost,
-      }),
-    );
+    expect(projectUpserts).toHaveLength(1);
+    expect(kindReads).toBeGreaterThan(0);
+    expect(projectUpserts[0]?.executionHost).toEqual({ kind: "local" });
+    expect(projects.get("project:/tmp/repo")?.executionHost).toEqual({ kind: "local" });
   });
 
   test("open_project_request collapses a git subdirectory onto the repo root workspace", async () => {
