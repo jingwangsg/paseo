@@ -1411,6 +1411,11 @@ describe("workspace aggregation", () => {
     } satisfies ReturnType<typeof createPersistedProjectRecord>;
     kindReads = 0;
     projects.set(existing.projectId, existing);
+    const originalBuildPersistedProjectRecord = session.buildPersistedProjectRecord.bind(session);
+    const buildPersistedProjectRecordSpy = vi.fn((input: any) =>
+      originalBuildPersistedProjectRecord(input),
+    );
+    session.buildPersistedProjectRecord = buildPersistedProjectRecordSpy;
 
     session.projectRegistry.get = async (projectId: string) => projects.get(projectId) ?? null;
     session.projectRegistry.upsert = async (
@@ -1448,6 +1453,8 @@ describe("workspace aggregation", () => {
       requestId: "r1",
     });
 
+    expect(buildPersistedProjectRecordSpy).toHaveBeenCalledTimes(1);
+    expect(buildPersistedProjectRecordSpy.mock.calls[0]?.[0]?.executionHost).toBe(executionHost);
     expect(projectUpserts).toHaveLength(1);
     expect(kindReads).toBeGreaterThan(0);
     expect(projectUpserts[0]?.executionHost).toEqual({ kind: "local" });
