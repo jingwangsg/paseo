@@ -13,6 +13,7 @@ function createWorkspace(
     workspaceKind: input.workspaceKind ?? "local_checkout",
     name: input.name ?? "main",
     status: input.status ?? "done",
+    executionHost: input.executionHost ?? { kind: "local" },
     diffStat: input.diffStat ?? null,
   };
 }

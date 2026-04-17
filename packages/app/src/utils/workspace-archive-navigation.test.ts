@@ -17,6 +17,7 @@ function workspace(
     workspaceKind: input.workspaceKind ?? "worktree",
     name: input.name ?? input.id,
     status: input.status ?? "done",
+    executionHost: input.executionHost ?? { kind: "local" },
     diffStat: input.diffStat ?? null,
   };
 }

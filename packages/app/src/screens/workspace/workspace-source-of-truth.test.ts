@@ -17,6 +17,7 @@ describe("workspace source of truth consumption", () => {
       workspaceKind: "local_checkout",
       name: "feat/workspace-sot",
       status: "running",
+      executionHost: { kind: "local" },
       diffStat: null,
     };
 

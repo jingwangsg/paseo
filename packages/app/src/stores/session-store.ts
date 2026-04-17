@@ -21,6 +21,7 @@ import type {
 import type {
   FileDownloadTokenResponse,
   GitSetupOptions,
+  ExecutionHost,
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
   ServerCapabilities,
@@ -120,6 +121,7 @@ export interface WorkspaceDescriptor {
   workspaceKind: WorkspaceDescriptorPayload["workspaceKind"];
   name: string;
   status: WorkspaceDescriptorPayload["status"];
+  executionHost: ExecutionHost;
   diffStat: { additions: number; deletions: number } | null;
 }
 
@@ -135,6 +137,7 @@ export function normalizeWorkspaceDescriptor(
     workspaceKind: payload.workspaceKind,
     name: payload.name,
     status: payload.status,
+    executionHost: payload.executionHost,
     diffStat: payload.diffStat ?? null,
   };
 }

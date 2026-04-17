@@ -19,7 +19,7 @@ function workspace(
     Partial<
       Pick<
         WorkspaceDescriptor,
-        "projectDisplayName" | "projectRootPath" | "projectKind" | "workspaceKind"
+        "projectDisplayName" | "projectRootPath" | "projectKind" | "workspaceKind" | "executionHost"
       >
     >,
 ): WorkspaceDescriptor {
@@ -32,6 +32,7 @@ function workspace(
     workspaceKind: input.workspaceKind ?? "local_checkout",
     name: input.name,
     status: input.status,
+    executionHost: input.executionHost ?? { kind: "local" },
     diffStat: null,
   };
 }
