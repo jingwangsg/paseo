@@ -35,6 +35,7 @@ import {
   type WorkspaceDescriptorPayload,
   type WorkspaceStateBucket,
 } from "./messages.js";
+import type { ExecutionHost } from "../shared/messages.js";
 import type { TerminalManager, TerminalsChangedEvent } from "../terminal/terminal-manager.js";
 import { captureTerminalLines, type TerminalSession } from "../terminal/terminal.js";
 import {
@@ -1214,6 +1215,7 @@ export class Session {
     placement: ProjectPlacementPayload;
     createdAt: string;
     updatedAt: string;
+    executionHost?: ExecutionHost;
   }): PersistedProjectRecord {
     return createPersistedProjectRecord({
       projectId: input.placement.projectKey,
@@ -1226,6 +1228,7 @@ export class Session {
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
       archivedAt: null,
+      executionHost: input.executionHost,
     });
   }
 
@@ -1284,6 +1287,7 @@ export class Session {
       placement,
       createdAt: currentProjectRecord?.createdAt ?? nextProjectCreatedAt,
       updatedAt: now,
+      executionHost: currentProjectRecord?.executionHost,
     });
     const nextWorkspaceRecord = this.buildPersistedWorkspaceRecord({
       workspaceId: resolvedWorkspaceId,
@@ -1304,7 +1308,8 @@ export class Session {
       currentProjectRecord.archivedAt ||
       currentProjectRecord.rootPath !== nextProjectRecord.rootPath ||
       currentProjectRecord.kind !== nextProjectRecord.kind ||
-      currentProjectRecord.displayName !== nextProjectRecord.displayName;
+      currentProjectRecord.displayName !== nextProjectRecord.displayName ||
+      currentProjectRecord.executionHost.kind !== nextProjectRecord.executionHost.kind;
     const needsStaleWorkspaceCleanup =
       !!staleWorkspace &&
       !staleWorkspace.archivedAt &&

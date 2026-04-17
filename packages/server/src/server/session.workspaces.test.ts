@@ -1341,6 +1341,108 @@ describe("workspace aggregation", () => {
     expect(response?.payload.workspace?.id).toBe("/tmp/repo");
   });
 
+  test("buildPersistedProjectRecord forwards an explicit executionHost", () => {
+    const session = createSessionForWorkspaceTests() as any;
+    let kindReads = 0;
+    const executionHost = new Proxy(
+      { kind: "local" as const },
+      {
+        get(target, property, receiver) {
+          if (property === "kind") {
+            kindReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+
+    const record = session.buildPersistedProjectRecord({
+      workspaceId: "/tmp/repo",
+      placement: {
+        projectKey: "project:/tmp/repo",
+        projectName: "repo",
+        checkout: {
+          cwd: "/tmp/repo",
+          isGit: false,
+          currentBranch: null,
+          remoteUrl: null,
+          worktreeRoot: null,
+          isPaseoOwnedWorktree: false,
+          mainRepoRoot: null,
+        },
+      },
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      executionHost,
+    });
+
+    expect(kindReads).toBeGreaterThan(0);
+    expect(record.executionHost).toEqual({ kind: "local" });
+  });
+
+  test("reconcileWorkspaceRecord passes through executionHost for an existing project", async () => {
+    const session = createSessionForWorkspaceTests() as any;
+    const projects = new Map<string, ReturnType<typeof createPersistedProjectRecord>>();
+    const workspaces = new Map<string, ReturnType<typeof createPersistedWorkspaceRecord>>();
+    const existing = createPersistedProjectRecord({
+      projectId: "project:/tmp/repo",
+      rootPath: "/tmp/repo",
+      kind: "non_git",
+      displayName: "old repo",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+      executionHost: { kind: "local" },
+    });
+    projects.set(existing.projectId, existing);
+
+    const originalBuildPersistedProjectRecord = session.buildPersistedProjectRecord.bind(session);
+    const buildPersistedProjectRecordSpy = vi.fn((input: any) =>
+      originalBuildPersistedProjectRecord(input),
+    );
+    session.buildPersistedProjectRecord = buildPersistedProjectRecordSpy;
+
+    session.projectRegistry.get = async (projectId: string) => projects.get(projectId) ?? null;
+    session.projectRegistry.upsert = async (
+      record: ReturnType<typeof createPersistedProjectRecord>,
+    ) => {
+      projects.set(record.projectId, record);
+    };
+    session.workspaceRegistry.get = async (workspaceId: string) =>
+      workspaces.get(workspaceId) ?? null;
+    session.workspaceRegistry.upsert = async (
+      record: ReturnType<typeof createPersistedWorkspaceRecord>,
+    ) => {
+      workspaces.set(record.workspaceId, record);
+    };
+    session.projectRegistry.list = async () => Array.from(projects.values());
+    session.workspaceRegistry.list = async () => Array.from(workspaces.values());
+    session.buildProjectPlacement = async (cwd: string) => ({
+      projectKey: "project:/tmp/repo",
+      projectName: "repo",
+      checkout: {
+        cwd,
+        isGit: false,
+        currentBranch: null,
+        remoteUrl: null,
+        worktreeRoot: null,
+        isPaseoOwnedWorktree: false,
+        mainRepoRoot: null,
+      },
+    });
+
+    await session.handleMessage({
+      type: "open_project_request",
+      cwd: "/tmp/repo",
+      requestId: "r1",
+    });
+
+    expect(buildPersistedProjectRecordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionHost: existing.executionHost,
+      }),
+    );
+  });
+
   test("open_project_request collapses a git subdirectory onto the repo root workspace", async () => {
     const emitted: Array<{ type: string; payload: unknown }> = [];
     const session = createSessionForWorkspaceTests() as any;
