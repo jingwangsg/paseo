@@ -3,6 +3,7 @@ import {
   appendMissingOrderKeys,
   applyStoredOrdering,
   buildSidebarProjectsFromWorkspaces,
+  aggregateSidebarProjects,
 } from "./use-sidebar-workspaces-list";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 
@@ -93,6 +94,20 @@ describe("appendMissingOrderKeys", () => {
 });
 
 describe("buildSidebarProjectsFromWorkspaces", () => {
+  it("exposes executionHost from the first workspace in a project", () => {
+    const projects = aggregateSidebarProjects([
+      workspace({
+        id: "/repo/main",
+        projectId: "project-1",
+        name: "feat/hard-cut",
+        status: "failed",
+        executionHost: { kind: "local" },
+      }),
+    ]);
+
+    expect(projects[0]?.executionHost).toEqual({ kind: "local" });
+  });
+
   it("uses workspace descriptor name and status directly", () => {
     const workspaces: WorkspaceDescriptor[] = [
       workspace({

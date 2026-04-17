@@ -24,6 +24,7 @@ function project(projectKey: string, workspaces: SidebarWorkspaceEntry[]): Sideb
     projectName: projectKey,
     projectKind: "git",
     iconWorkingDir: workspaces[0]?.workspaceId ?? "",
+    executionHost: { kind: "local" },
     statusBucket: "done",
     activeCount: 0,
     totalWorkspaces: workspaces.length,

@@ -31,6 +31,7 @@ export interface SidebarProjectEntry {
   projectName: string;
   projectKind: WorkspaceDescriptor["projectKind"];
   iconWorkingDir: string;
+  executionHost: WorkspaceDescriptor["executionHost"];
   statusBucket: SidebarStateBucket;
   activeCount: number;
   totalWorkspaces: number;
@@ -104,6 +105,7 @@ export function buildSidebarProjectsFromWorkspaces(input: {
           workspace.projectDisplayName || projectDisplayNameFromProjectId(workspace.projectId),
         projectKind: workspace.projectKind,
         iconWorkingDir: workspace.projectRootPath || workspace.id,
+        executionHost: workspace.executionHost,
         statusBucket: "done",
         activeCount: 0,
         totalWorkspaces: 0,
@@ -153,6 +155,17 @@ export function buildSidebarProjectsFromWorkspaces(input: {
     items: baselineProjects,
     storedOrder: input.projectOrder,
     getKey: (project) => project.projectKey,
+  });
+}
+
+export function aggregateSidebarProjects(
+  descriptors: Iterable<WorkspaceDescriptor>,
+): SidebarProjectEntry[] {
+  return buildSidebarProjectsFromWorkspaces({
+    serverId: "",
+    workspaces: descriptors,
+    projectOrder: [],
+    workspaceOrderByScope: {},
   });
 }
 
