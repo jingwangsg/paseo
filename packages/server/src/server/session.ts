@@ -13,6 +13,7 @@ import {
   type AgentSnapshotPayload,
   type SessionInboundMessage,
   type SessionOutboundMessage,
+  type SessionOutboundMessageInput,
   type FileExplorerRequest,
   type FileDownloadTokenRequest,
   type GitSetupOptions,
@@ -32,7 +33,7 @@ import {
   type EditorTargetDescriptorPayload,
   type EditorTargetId,
   type ProjectPlacementPayload,
-  type WorkspaceDescriptorPayload,
+  type WorkspaceDescriptorPayloadInput,
   type WorkspaceStateBucket,
 } from "./messages.js";
 import type { ExecutionHost } from "../shared/messages.js";
@@ -293,7 +294,7 @@ type FetchAgentsRequestMessage = Extract<SessionInboundMessage, { type: "fetch_a
 type FetchAgentsRequestFilter = NonNullable<FetchAgentsRequestMessage["filter"]>;
 type FetchAgentsRequestSort = NonNullable<FetchAgentsRequestMessage["sort"]>[number];
 type FetchAgentsResponsePayload = Extract<
-  SessionOutboundMessage,
+  SessionOutboundMessageInput,
   { type: "fetch_agents_response" }
 >["payload"];
 type FetchAgentsResponseEntry = FetchAgentsResponsePayload["entries"][number];
@@ -318,13 +319,13 @@ type FetchWorkspacesRequestMessage = Extract<
 type FetchWorkspacesRequestFilter = NonNullable<FetchWorkspacesRequestMessage["filter"]>;
 type FetchWorkspacesRequestSort = NonNullable<FetchWorkspacesRequestMessage["sort"]>[number];
 type FetchWorkspacesResponsePayload = Extract<
-  SessionOutboundMessage,
+  SessionOutboundMessageInput,
   { type: "fetch_workspaces_response" }
 >["payload"];
 type FetchWorkspacesResponseEntry = FetchWorkspacesResponsePayload["entries"][number];
 type FetchWorkspacesResponsePageInfo = FetchWorkspacesResponsePayload["pageInfo"];
 type WorkspaceUpdatePayload = Extract<
-  SessionOutboundMessage,
+  SessionOutboundMessageInput,
   { type: "workspace_update" }
 >["payload"];
 type WorkspaceUpdatesFilter = FetchWorkspacesRequestFilter;
@@ -424,7 +425,7 @@ type VoiceTranscriptionResultPayload = {
 export type SessionOptions = {
   clientId: string;
   appVersion: string | null;
-  onMessage: (msg: SessionOutboundMessage) => void;
+  onMessage: (msg: SessionOutboundMessageInput) => void;
   onBinaryMessage?: (frame: Uint8Array) => void;
   onLifecycleIntent?: (intent: SessionLifecycleIntent) => void;
   logger: pino.Logger;
@@ -542,7 +543,7 @@ export class Session {
   private readonly clientId: string;
   private appVersion: string | null;
   private readonly sessionId: string;
-  private readonly onMessage: (msg: SessionOutboundMessage) => void;
+  private readonly onMessage: (msg: SessionOutboundMessageInput) => void;
   private readonly onBinaryMessage: ((frame: Uint8Array) => void) | null;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
   private readonly sessionLogger: pino.Logger;
@@ -2559,7 +2560,7 @@ export class Session {
   }
 
   private handleDictationManagerMessage(msg: DictationStreamOutboundMessage): void {
-    this.emit(msg as unknown as SessionOutboundMessage);
+    this.emit(msg as unknown as SessionOutboundMessageInput);
   }
 
   private async startVoiceTurnController(): Promise<void> {
@@ -5216,7 +5217,7 @@ export class Session {
   private async describeWorkspaceRecord(
     workspace: PersistedWorkspaceRecord,
     projectRecord?: PersistedProjectRecord | null,
-  ): Promise<WorkspaceDescriptorPayload> {
+  ): Promise<WorkspaceDescriptorPayloadInput> {
     const resolvedProjectRecord =
       projectRecord ?? (await this.projectRegistry.get(workspace.projectId));
 
@@ -5230,14 +5231,13 @@ export class Session {
       name: workspace.displayName,
       status: "done",
       activityAt: null,
-      executionHost: undefined as never,
       diffStat: null,
     };
   }
 
   private buildWorkspaceGitRuntimePayload(
     snapshot: WorkspaceGitRuntimeSnapshot,
-  ): NonNullable<WorkspaceDescriptorPayload["gitRuntime"]> | null {
+  ): NonNullable<WorkspaceDescriptorPayloadInput["gitRuntime"]> | null {
     if (!snapshot.git.isGit) {
       return null;
     }
@@ -5255,7 +5255,7 @@ export class Session {
 
   private buildWorkspaceGitHubRuntimePayload(
     snapshot: WorkspaceGitRuntimeSnapshot,
-  ): NonNullable<WorkspaceDescriptorPayload["githubRuntime"]> {
+  ): NonNullable<WorkspaceDescriptorPayloadInput["githubRuntime"]> {
     return {
       featuresEnabled: snapshot.github.featuresEnabled,
       pullRequest: snapshot.github.pullRequest,
@@ -5267,7 +5267,7 @@ export class Session {
   private async describeWorkspaceRecordWithGitData(
     workspace: PersistedWorkspaceRecord,
     projectRecord?: PersistedProjectRecord | null,
-  ): Promise<WorkspaceDescriptorPayload> {
+  ): Promise<WorkspaceDescriptorPayloadInput> {
     const base = await this.describeWorkspaceRecord(workspace, projectRecord);
 
     let snapshot: WorkspaceGitRuntimeSnapshot;
@@ -5297,7 +5297,7 @@ export class Session {
     workspace: PersistedWorkspaceRecord;
     projectRecord?: PersistedProjectRecord | null;
     includeGitData: boolean;
-  }): Promise<WorkspaceDescriptorPayload> {
+  }): Promise<WorkspaceDescriptorPayloadInput> {
     if (input.includeGitData && input.projectRecord?.kind === "git") {
       return this.describeWorkspaceRecordWithGitData(input.workspace, input.projectRecord);
     }
@@ -5307,7 +5307,7 @@ export class Session {
   private async buildWorkspaceDescriptorMap(options: {
     includeGitData: boolean;
     workspaceIds?: Iterable<string>;
-  }): Promise<Map<string, WorkspaceDescriptorPayload>> {
+  }): Promise<Map<string, WorkspaceDescriptorPayloadInput>> {
     const [agents, persistedWorkspaces, persistedProjects] = await Promise.all([
       this.listAgentPayloads(),
       this.workspaceRegistry.list(),
@@ -5320,7 +5320,7 @@ export class Session {
         .filter((project) => !project.archivedAt)
         .map((project) => [project.projectId, project] as const),
     );
-    const descriptorsByWorkspaceId = new Map<string, WorkspaceDescriptorPayload>();
+    const descriptorsByWorkspaceId = new Map<string, WorkspaceDescriptorPayloadInput>();
     const workspaceIds = options.workspaceIds
       ? new Set(
           Array.from(options.workspaceIds, (workspaceId) =>
@@ -5390,7 +5390,7 @@ export class Session {
     return bestMatch?.workspaceId ?? normalizedCwd;
   }
 
-  private async listWorkspaceDescriptors(): Promise<WorkspaceDescriptorPayload[]> {
+  private async listWorkspaceDescriptors(): Promise<WorkspaceDescriptorPayloadInput[]> {
     return Array.from(
       (
         await this.buildWorkspaceDescriptorMap({
@@ -5420,7 +5420,7 @@ export class Session {
   }
 
   private getFetchWorkspacesSortValue(
-    workspace: WorkspaceDescriptorPayload,
+    workspace: WorkspaceDescriptorPayloadInput,
     key: FetchWorkspacesRequestSort["key"],
   ): string | number | null {
     switch (key) {
@@ -5436,8 +5436,8 @@ export class Session {
   }
 
   private compareFetchWorkspacesEntries(
-    left: WorkspaceDescriptorPayload,
-    right: WorkspaceDescriptorPayload,
+    left: WorkspaceDescriptorPayloadInput,
+    right: WorkspaceDescriptorPayloadInput,
     sort: FetchWorkspacesRequestSort[],
   ): number {
     for (const spec of sort) {
@@ -5544,7 +5544,7 @@ export class Session {
   }
 
   private compareWorkspaceWithCursor(
-    workspace: WorkspaceDescriptorPayload,
+    workspace: WorkspaceDescriptorPayloadInput,
     cursor: FetchWorkspacesCursor,
     sort: FetchWorkspacesRequestSort[],
   ): number {
@@ -5562,7 +5562,7 @@ export class Session {
   }
 
   private matchesWorkspaceFilter(input: {
-    workspace: WorkspaceDescriptorPayload;
+    workspace: WorkspaceDescriptorPayloadInput;
     filter: FetchWorkspacesRequestFilter | undefined;
   }): boolean {
     const { workspace, filter } = input;
@@ -7154,7 +7154,7 @@ export class Session {
   /**
    * Emit a message to the client
    */
-  private emit(msg: SessionOutboundMessage): void {
+  private emit(msg: SessionOutboundMessageInput): void {
     this.sessionLogger.trace(
       { messageType: msg.type, payloadBytes: JSON.stringify(msg).length },
       "outbound message",

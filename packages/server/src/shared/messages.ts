@@ -2880,6 +2880,74 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;
+export type WorkspaceDescriptorPayloadInput = z.input<typeof WorkspaceDescriptorPayloadSchema>;
+
+type WorkspaceUpdateMessageInput = Omit<
+  Extract<SessionOutboundMessage, { type: "workspace_update" }>,
+  "payload"
+> & {
+  payload:
+    | {
+        kind: "upsert";
+        workspace: WorkspaceDescriptorPayloadInput;
+      }
+    | {
+        kind: "remove";
+        id: string;
+      };
+};
+
+type FetchWorkspacesResponseMessageInput = Omit<
+  Extract<SessionOutboundMessage, { type: "fetch_workspaces_response" }>,
+  "payload"
+> & {
+  payload: Omit<
+    Extract<SessionOutboundMessage, { type: "fetch_workspaces_response" }>["payload"],
+    "entries"
+  > & {
+    entries: WorkspaceDescriptorPayloadInput[];
+  };
+};
+
+type OpenProjectResponseMessageInput = Omit<
+  Extract<SessionOutboundMessage, { type: "open_project_response" }>,
+  "payload"
+> & {
+  payload: Omit<
+    Extract<SessionOutboundMessage, { type: "open_project_response" }>["payload"],
+    "workspace"
+  > & {
+    workspace: WorkspaceDescriptorPayloadInput | null;
+  };
+};
+
+type CreatePaseoWorktreeResponseMessageInput = Omit<
+  Extract<SessionOutboundMessage, { type: "create_paseo_worktree_response" }>,
+  "payload"
+> & {
+  payload: Omit<
+    Extract<SessionOutboundMessage, { type: "create_paseo_worktree_response" }>["payload"],
+    "workspace"
+  > & {
+    workspace: WorkspaceDescriptorPayloadInput | null;
+  };
+};
+
+type WorkspaceMessageInput =
+  | WorkspaceUpdateMessageInput
+  | FetchWorkspacesResponseMessageInput
+  | OpenProjectResponseMessageInput
+  | CreatePaseoWorktreeResponseMessageInput;
+
+type NonWorkspaceOutboundMessageInput = Exclude<
+  SessionOutboundMessage,
+  | Extract<SessionOutboundMessage, { type: "workspace_update" }>
+  | Extract<SessionOutboundMessage, { type: "fetch_workspaces_response" }>
+  | Extract<SessionOutboundMessage, { type: "open_project_response" }>
+  | Extract<SessionOutboundMessage, { type: "create_paseo_worktree_response" }>
+>;
+
+export type SessionOutboundMessageInput = NonWorkspaceOutboundMessageInput | WorkspaceMessageInput;
 
 // Type exports for individual message types
 export type ActivityLogMessage = z.infer<typeof ActivityLogMessageSchema>;
@@ -3195,11 +3263,11 @@ export function extractSessionMessage(wsMsg: WSInboundMessage): SessionInboundMe
 /**
  * Wrap session message in WebSocket envelope
  */
-export function wrapSessionMessage(sessionMsg: SessionOutboundMessage): WSOutboundMessage {
+export function wrapSessionMessage(sessionMsg: SessionOutboundMessageInput): WSOutboundMessage {
   return {
     type: "session",
-    message: sessionMsg,
-  };
+    message: sessionMsg as SessionOutboundMessage,
+  } as WSOutboundMessage;
 }
 
 export function parseServerInfoStatusPayload(payload: unknown): ServerInfoStatusPayload | null {

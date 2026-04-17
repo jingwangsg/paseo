@@ -8,8 +8,8 @@ import {
   type GitSetupOptions,
   type ProjectPlacementPayload,
   type SessionInboundMessage,
-  type SessionOutboundMessage,
-  type WorkspaceDescriptorPayload,
+  type SessionOutboundMessageInput,
+  type WorkspaceDescriptorPayloadInput,
 } from "./messages.js";
 import type {
   PersistedProjectRecord,
@@ -46,7 +46,7 @@ export type NormalizedGitOptions = {
   worktreeSlug?: string;
 };
 
-type EmitSessionMessage = (message: SessionOutboundMessage) => void;
+type EmitSessionMessage = (message: SessionOutboundMessageInput) => void;
 
 type BuildAgentSessionConfigDependencies = {
   paseoHome?: string;
@@ -102,7 +102,7 @@ type HandleCreatePaseoWorktreeRequestDependencies = {
   workspaceGitService: WorkspaceGitService;
   describeWorkspaceRecord: (
     workspace: PersistedWorkspaceRecord,
-  ) => Promise<WorkspaceDescriptorPayload>;
+  ) => Promise<WorkspaceDescriptorPayloadInput>;
   emit: EmitSessionMessage;
   registerPendingWorktreeWorkspace: (options: {
     repoRoot: string;
