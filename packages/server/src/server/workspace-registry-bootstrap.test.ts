@@ -229,4 +229,77 @@ describe("bootstrapWorkspaceRegistries", () => {
     expect(await workspaceRegistry.list()).toHaveLength(1);
     expect((await workspaceRegistry.list())[0]?.workspaceId).toBe("/tmp/existing");
   });
+
+  test("preserves existing project executionHost when rematerializing missing workspaces", async () => {
+    await projectRegistry.initialize();
+    await projectRegistry.upsert({
+      projectId: "/tmp/non-git-project",
+      rootPath: "/tmp/non-git-project",
+      kind: "non_git",
+      displayName: "non-git-project",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+      archivedAt: null,
+      executionHost: { kind: "local" },
+    });
+
+    await agentStorage.initialize();
+    await agentStorage.upsert({
+      id: "agent-1",
+      provider: "codex",
+      cwd: "/tmp/non-git-project",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-03T00:00:00.000Z",
+      lastActivityAt: "2026-03-03T00:00:00.000Z",
+      lastUserMessageAt: null,
+      title: null,
+      labels: {},
+      lastStatus: "idle",
+      lastModeId: null,
+      config: null,
+      runtimeInfo: { provider: "codex", sessionId: null },
+      persistence: null,
+      archivedAt: null,
+    });
+
+    const originalGet = projectRegistry.get.bind(projectRegistry);
+    const originalUpsert = projectRegistry.upsert.bind(projectRegistry);
+    const projectUpserts: Array<Parameters<typeof originalUpsert>[0]> = [];
+    let executionHostReads = 0;
+    projectRegistry.get = async (projectId: string) => {
+      const project = await originalGet(projectId);
+      if (!project) {
+        return null;
+      }
+      return new Proxy(project, {
+        get(target, property, receiver) {
+          if (property === "executionHost") {
+            executionHostReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+    };
+    projectRegistry.upsert = async (record) => {
+      projectUpserts.push(record);
+      await originalUpsert(record);
+    };
+
+    await bootstrapWorkspaceRegistries({
+      paseoHome,
+      agentStorage,
+      projectRegistry,
+      workspaceRegistry,
+      workspaceGitService,
+      logger,
+    });
+
+    expect(executionHostReads).toBeGreaterThan(0);
+    expect(projectUpserts).toHaveLength(1);
+    expect(projectUpserts[0]?.executionHost).toEqual({ kind: "local" });
+    expect((await projectRegistry.get("/tmp/non-git-project"))?.executionHost).toEqual({
+      kind: "local",
+    });
+    expect((await workspaceRegistry.list())[0]?.workspaceId).toBe("/tmp/non-git-project");
+  });
 });

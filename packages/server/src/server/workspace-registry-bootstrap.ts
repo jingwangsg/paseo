@@ -124,6 +124,7 @@ export async function bootstrapWorkspaceRegistries(options: {
     existingProjectRange.createdAt = minIsoDate(existingProjectRange.createdAt, createdAt);
     existingProjectRange.updatedAt = maxIsoDate(existingProjectRange.updatedAt, updatedAt);
     projectRanges.set(placement.projectKey, existingProjectRange);
+    const existingProject = await options.projectRegistry.get(placement.projectKey);
 
     await options.projectRegistry.upsert(
       createPersistedProjectRecord({
@@ -136,6 +137,7 @@ export async function bootstrapWorkspaceRegistries(options: {
         displayName: placement.projectName,
         createdAt: existingProjectRange.createdAt ?? createdAt,
         updatedAt: existingProjectRange.updatedAt ?? updatedAt,
+        executionHost: existingProject?.executionHost,
       }),
     );
   }

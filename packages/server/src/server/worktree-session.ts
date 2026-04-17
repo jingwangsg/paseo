@@ -11,6 +11,7 @@ import {
   type SessionOutboundMessageInput,
   type WorkspaceDescriptorPayloadInput,
 } from "./messages.js";
+import type { ExecutionHost } from "../shared/messages.js";
 import type {
   PersistedProjectRecord,
   PersistedWorkspaceRecord,
@@ -77,6 +78,7 @@ type RegisterPendingWorktreeWorkspaceDependencies = {
     placement: ProjectPlacementPayload;
     createdAt: string;
     updatedAt: string;
+    executionHost?: ExecutionHost;
   }) => PersistedProjectRecord;
   buildPersistedWorkspaceRecord: (input: {
     workspaceId: string;
@@ -520,6 +522,7 @@ export async function registerPendingWorktreeWorkspace(
     placement,
     createdAt: existingProject?.createdAt ?? now,
     updatedAt: now,
+    executionHost: existingProject?.executionHost,
   });
   const nextWorkspaceRecord = dependencies.buildPersistedWorkspaceRecord({
     workspaceId,

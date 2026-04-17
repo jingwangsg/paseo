@@ -1232,6 +1232,133 @@ describe("workspace aggregation", () => {
     expect(projects.has(response?.payload.workspace?.projectId)).toBe(true);
   });
 
+  test("create paseo worktree request preserves the existing project executionHost", async () => {
+    const emitted: Array<{ type: string; payload: unknown }> = [];
+    const tempDir = realpathSync(mkdtempSync(path.join(tmpdir(), "session-worktree-test-")));
+    const repoDir = path.join(tempDir, "repo");
+    const paseoHome = path.join(tempDir, "paseo-home");
+    execSync(`mkdir -p ${repoDir}`);
+    execSync("git init -b main", { cwd: repoDir, stdio: "pipe" });
+    execSync("git config user.email 'test@test.com'", { cwd: repoDir, stdio: "pipe" });
+    execSync("git config user.name 'Test'", { cwd: repoDir, stdio: "pipe" });
+    writeFileSync(path.join(repoDir, "file.txt"), "hello\n");
+    execSync("git add .", { cwd: repoDir, stdio: "pipe" });
+    execSync("git -c commit.gpgsign=false commit -m 'initial'", { cwd: repoDir, stdio: "pipe" });
+    const workspaceGitService = createNoopWorkspaceGitService();
+    workspaceGitService.getSnapshot = vi.fn(async (cwd: string) => {
+      if (cwd === repoDir) {
+        return createWorkspaceRuntimeSnapshot(cwd, {
+          git: {
+            repoRoot: repoDir,
+            currentBranch: "main",
+            remoteUrl: null,
+            isPaseoOwnedWorktree: false,
+            mainRepoRoot: null,
+          },
+        });
+      }
+
+      if (cwd.includes("worktree-123")) {
+        return createWorkspaceRuntimeSnapshot(cwd, {
+          git: {
+            repoRoot: cwd,
+            currentBranch: "worktree-123",
+            remoteUrl: null,
+            isPaseoOwnedWorktree: true,
+            mainRepoRoot: repoDir,
+          },
+        });
+      }
+
+      return createWorkspaceRuntimeSnapshot(cwd, {
+        git: {
+          repoRoot: cwd,
+          currentBranch: "main",
+          remoteUrl: null,
+          isPaseoOwnedWorktree: false,
+          mainRepoRoot: null,
+        },
+      });
+    });
+    const session = createSessionForWorkspaceTests({
+      workspaceGitService,
+    }) as any;
+
+    const workspaces = new Map();
+    const projects = new Map<string, ReturnType<typeof createPersistedProjectRecord>>();
+    const projectUpserts: Array<ReturnType<typeof createPersistedProjectRecord>> = [];
+    let kindReads = 0;
+    const executionHost = new Proxy(
+      { kind: "local" as const },
+      {
+        get(target, property, receiver) {
+          if (property === "kind") {
+            kindReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const existingProject = {
+      ...createPersistedProjectRecord({
+        projectId: repoDir,
+        rootPath: repoDir,
+        kind: "git",
+        displayName: path.basename(repoDir),
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        executionHost: { kind: "local" },
+      }),
+      executionHost,
+    } satisfies ReturnType<typeof createPersistedProjectRecord>;
+    projects.set(existingProject.projectId, existingProject);
+    const originalBuildPersistedProjectRecord = session.buildPersistedProjectRecord.bind(session);
+    const buildPersistedProjectRecordSpy = vi.fn((input: any) =>
+      originalBuildPersistedProjectRecord(input),
+    );
+    session.buildPersistedProjectRecord = buildPersistedProjectRecordSpy;
+    session.paseoHome = paseoHome;
+    session.workspaceRegistry.get = async (workspaceId: string) =>
+      workspaces.get(workspaceId) ?? null;
+    session.workspaceRegistry.list = async () => Array.from(workspaces.values());
+    session.workspaceRegistry.upsert = async (record: any) => {
+      workspaces.set(record.workspaceId, record);
+    };
+    session.projectRegistry.get = async (projectId: string) => projects.get(projectId) ?? null;
+    session.projectRegistry.list = async () => Array.from(projects.values());
+    session.projectRegistry.upsert = async (
+      record: ReturnType<typeof createPersistedProjectRecord>,
+    ) => {
+      projectUpserts.push(record);
+      projects.set(record.projectId, record);
+    };
+    session.emit = (message: { type: string; payload: unknown }) => {
+      emitted.push(message);
+    };
+    try {
+      await session.handleCreatePaseoWorktreeRequest({
+        type: "create_paseo_worktree_request",
+        cwd: repoDir,
+        worktreeSlug: "worktree-123",
+        requestId: "req-worktree",
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    expect(buildPersistedProjectRecordSpy).toHaveBeenCalledTimes(1);
+    expect(buildPersistedProjectRecordSpy.mock.calls[0]?.[0]?.executionHost).toBe(executionHost);
+    expect(projectUpserts).toHaveLength(1);
+    expect(kindReads).toBeGreaterThan(0);
+    expect(projectUpserts[0]?.executionHost).toEqual({ kind: "local" });
+    expect(projects.get(repoDir)?.executionHost).toEqual({ kind: "local" });
+
+    const response = emitted.find((message) => message.type === "create_paseo_worktree_response") as
+      | { type: "create_paseo_worktree_response"; payload: any }
+      | undefined;
+    expect(response?.payload.error).toBeNull();
+  });
+
   test("workspace update fanout for multiple cwd values is deduplicated", async () => {
     const emitted: Array<{ type: string; payload: unknown }> = [];
     const session = createSessionForWorkspaceTests() as any;
