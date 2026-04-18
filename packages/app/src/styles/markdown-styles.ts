@@ -56,7 +56,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: theme.fontSize["3xl"],
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
+      marginTop: theme.spacing[8],
       marginBottom: theme.spacing[3],
       lineHeight: 32,
       borderBottomWidth: 1,
@@ -69,7 +69,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: theme.fontSize["2xl"],
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
+      marginTop: theme.spacing[8],
       marginBottom: theme.spacing[3],
       lineHeight: 28,
       borderBottomWidth: 1,
@@ -310,8 +310,9 @@ export function createMarkdownStyles(theme: Theme) {
       borderLeftColor: theme.colors.primary,
       paddingHorizontal: theme.spacing[4],
       paddingVertical: theme.spacing[3],
-      marginVertical: theme.spacing[3],
+      marginVertical: theme.spacing[4],
       borderRadius: theme.borderRadius.md,
+      fontStyle: "italic" as const,
     },
 
     // =========================================================================

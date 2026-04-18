@@ -92,4 +92,16 @@ describe("createMarkdownStyles", () => {
     expect((styles.hr as any).backgroundColor).toBeUndefined();
     expect((styles.hr as any).height).toBeUndefined();
   });
+
+  it("headings have proportional top margins for visual rhythm", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.heading1.marginTop).toBeGreaterThan(styles.heading3.marginTop);
+    expect(styles.heading3.marginTop).toBeGreaterThan(styles.heading5.marginTop);
+    expect(styles.blockquote.marginVertical).toBeLessThan(styles.heading1.marginTop);
+  });
+
+  it("blockquote has italic text style", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.blockquote.fontStyle).toBe("italic");
+  });
 });
