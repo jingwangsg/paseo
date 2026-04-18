@@ -250,9 +250,9 @@ const RemoteHostStatusPayloadSchema = z.object({
     "unreachable",
     "failed",
   ]),
-  tunnelPort: z.number().optional(),
-  daemonVersion: z.string().optional(),
-  error: z.string().optional(),
+  tunnelPort: z.number().nullable().optional(),
+  daemonVersion: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
 });
 
 const AddRemoteHostResponseSchema = z.object({
