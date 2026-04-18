@@ -177,6 +177,7 @@ import type { LocalSpeechModelId } from "./speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "./speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "./speech/speech-runtime.js";
 import type pino from "pino";
+import type { RemoteHostManager, RemoteHostStatusEntry } from "./remote/remote-host-manager.js";
 import { resolveClientMessageId } from "./client-message-id.js";
 import { ChatServiceError, FileBackedChatService } from "./chat/chat-service.js";
 import { notifyChatMentions } from "./chat/chat-mentions.js";
@@ -463,6 +464,7 @@ export type SessionOptions = {
   };
   agentProviderRuntimeSettings?: AgentProviderRuntimeSettingsMap;
   providerOverrides?: Record<string, ProviderOverride>;
+  remoteHostManager?: RemoteHostManager;
 };
 
 export type SessionLifecycleIntent =
@@ -634,6 +636,8 @@ export class Session {
   private readonly providerOverrides: Record<string, ProviderOverride> | undefined;
   private voiceModeAgentId: string | null = null;
   private voiceModeBaseConfig: VoiceModeBaseConfig | null = null;
+  private readonly remoteHostManager: RemoteHostManager | null;
+  private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
 
   constructor(options: SessionOptions) {
     const {
@@ -722,6 +726,7 @@ export class Session {
     this.getSpeechReadiness = dictation?.getSpeechReadiness;
     this.agentProviderRuntimeSettings = agentProviderRuntimeSettings;
     this.providerOverrides = providerOverrides;
+    this.remoteHostManager = options.remoteHostManager ?? null;
     this.abortController = new AbortController();
     this.sessionLogger = logger.child({
       module: "session",
@@ -1879,6 +1884,22 @@ export class Session {
 
           case "loop/stop":
             await this.handleLoopStopRequest(msg);
+            break;
+
+          case "add_remote_host_request":
+            await this.handleAddRemoteHost(msg);
+            break;
+          case "remove_remote_host_request":
+            await this.handleRemoveRemoteHost(msg);
+            break;
+          case "fetch_remote_hosts_request":
+            await this.handleFetchRemoteHosts(msg);
+            break;
+          case "retry_remote_host_request":
+            await this.handleRetryRemoteHost(msg);
+            break;
+          case "deploy_remote_host_request":
+            await this.handleDeployRemoteHost(msg);
             break;
         }
       } catch (error: any) {
@@ -7222,6 +7243,193 @@ export class Session {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Remote host management handlers
+  // ---------------------------------------------------------------------------
+
+  private async handleAddRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+    hostname: string;
+    user?: string;
+    port?: number;
+    identityFile?: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "add_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.addHost({
+        hostAlias: msg.hostAlias,
+        hostname: msg.hostname,
+        user: msg.user,
+        port: msg.port,
+        identityFile: msg.identityFile,
+      });
+      this.emit({
+        type: "add_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "add_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleRemoveRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.removeHost(msg.hostAlias);
+
+      // Clean up mirrored projects/workspaces
+      const prefix = `ssh:${msg.hostAlias}:`;
+      const allProjects = await this.projectRegistry.list();
+      for (const p of allProjects) {
+        if (p.projectId.startsWith(prefix)) {
+          await this.projectRegistry.remove(p.projectId);
+        }
+      }
+      const allWorkspaces = await this.workspaceRegistry.list();
+      for (const w of allWorkspaces) {
+        if (w.workspaceId.startsWith(prefix)) {
+          await this.workspaceRegistry.remove(w.workspaceId);
+        }
+      }
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleFetchRemoteHosts(msg: { requestId: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "fetch_remote_hosts_response",
+        payload: { requestId: msg.requestId, hosts: [] },
+      });
+      return;
+    }
+    const hosts = this.remoteHostManager.listStatuses();
+    this.emit({
+      type: "fetch_remote_hosts_response",
+      payload: { requestId: msg.requestId, hosts },
+    });
+
+    // Opt-in to status updates for this session
+    if (!this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostStatusListener = (status) => {
+        this.emit({
+          type: "remote_host_update",
+          payload: { host: status },
+        });
+      };
+      this.remoteHostManager.on("status_update", this.remoteHostStatusListener);
+    }
+  }
+
+  private async handleRetryRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.retryHost(msg.hostAlias);
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleDeployRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.triggerConnect(msg.hostAlias);
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
   /**
    * Clean up session resources
    */
@@ -7289,6 +7497,11 @@ export class Session {
       unsubscribe();
     }
     this.workspaceGitSubscriptions.clear();
+
+    if (this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostManager.removeListener("status_update", this.remoteHostStatusListener);
+      this.remoteHostStatusListener = null;
+    }
   }
 
   // ============================================================================

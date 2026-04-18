@@ -37,6 +37,7 @@ import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { PushTokenStore } from "./push/token-store.js";
 import { PushService } from "./push/push-service.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
+import type { RemoteHostManager } from "./remote/remote-host-manager.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import {
   computeShouldNotifyClient,
@@ -315,6 +316,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly providerOverrides: Record<string, ProviderOverride> | undefined;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
+  private readonly remoteHostManager: RemoteHostManager | null;
   private serverCapabilities: ServerCapabilities | undefined;
   private runtimeWindowStartedAt = Date.now();
   private readonly runtimeCounters: WebSocketRuntimeCounters = {
@@ -368,6 +370,7 @@ export class VoiceAssistantWebSocketServer {
     scheduleService?: ScheduleService,
     checkoutDiffManager?: CheckoutDiffManager,
     workspaceGitService?: WorkspaceGitServiceImpl,
+    remoteHostManager?: RemoteHostManager,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -414,6 +417,7 @@ export class VoiceAssistantWebSocketServer {
       providerSnapshotLogger,
     );
     this.onLifecycleIntent = onLifecycleIntent ?? null;
+    this.remoteHostManager = remoteHostManager ?? null;
     this.serverCapabilities = buildServerCapabilities({
       readiness: this.speech?.getReadiness() ?? null,
     });
@@ -738,6 +742,7 @@ export class VoiceAssistantWebSocketServer {
           : undefined,
       agentProviderRuntimeSettings: this.agentProviderRuntimeSettings,
       providerOverrides: this.providerOverrides,
+      remoteHostManager: this.remoteHostManager ?? undefined,
     });
 
     connection = {
