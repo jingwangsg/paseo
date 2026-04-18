@@ -717,6 +717,19 @@ function nodeHasParentType(parent: unknown, type: string): boolean {
   );
 }
 
+const BLOCKQUOTE_BORDER_COLORS = ["primary", "accent", "foregroundMuted"] as const;
+
+function getBlockquoteDepth(parent: any): number {
+  if (!Array.isArray(parent)) return 0;
+  let depth = 0;
+  for (const ancestor of parent) {
+    if (ancestor?.type === "blockquote") {
+      depth++;
+    }
+  }
+  return depth;
+}
+
 const turnCopyButtonStylesheet = StyleSheet.create((theme) => ({
   container: {
     alignSelf: "flex-start",
@@ -1136,6 +1149,32 @@ export const AssistantMessage = memo(function AssistantMessage({
           </Text>
         </View>
       ),
+      blockquote: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        const depth = getBlockquoteDepth(parent);
+        const colorKey =
+          BLOCKQUOTE_BORDER_COLORS[Math.min(depth, BLOCKQUOTE_BORDER_COLORS.length - 1)];
+        const borderColor = theme.colors[colorKey];
+        const isNested = depth > 0;
+
+        return (
+          <View
+            key={node.key}
+            style={[
+              styles.blockquote,
+              {
+                borderLeftColor: borderColor,
+                ...(isNested && {
+                  backgroundColor: "transparent",
+                  marginVertical: theme.spacing[1],
+                  paddingVertical: theme.spacing[2],
+                }),
+              },
+            ]}
+          >
+            {children}
+          </View>
+        );
+      },
       link: (node: any, children: ReactNode[], _parent: any, styles: any) => (
         <MarkdownLink
           key={node.key}
