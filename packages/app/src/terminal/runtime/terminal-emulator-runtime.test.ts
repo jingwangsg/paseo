@@ -287,4 +287,43 @@ describe("terminal-emulator-runtime", () => {
     writeCallbacks[0]?.();
     expect(onCommitted).toHaveBeenCalledTimes(1);
   });
+
+  it("coalesces screen-clear + subsequent write into a single terminal.write call", () => {
+    vi.useFakeTimers();
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+
+    // Simulate Ink redraw: clear screen then write new content
+    runtime.write({ text: "\x1b[2J" });
+    runtime.write({ text: "new frame content" });
+
+    // The flicker filter should hold the clear and coalesce with the next write
+    expect(writeTexts).toEqual(["\x1b[2Jnew frame content"]);
+
+    writeCallbacks[0]?.();
+    vi.useRealTimers();
+  });
+
+  it("flushes a screen-clear after 50ms if no follow-up data arrives", () => {
+    vi.useFakeTimers();
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.write({ text: "\x1b[2J" });
+
+    // Nothing written yet — held by flicker filter
+    expect(writeTexts).toEqual([]);
+
+    // After 50ms, flush the clear on its own
+    vi.advanceTimersByTime(50);
+    expect(writeTexts).toEqual(["\x1b[2J"]);
+
+    vi.useRealTimers();
+  });
+
+  it("does not delay writes that contain no screen-clear sequences", () => {
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.write({ text: "hello world" });
+
+    expect(writeTexts).toEqual(["hello world"]);
+  });
 });
