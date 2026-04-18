@@ -1154,18 +1154,6 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-    if (shouldAutoApprovePermissionRequest(this.provider, this.currentMode)) {
-      const selectedOption = selectPermissionOption(params.options, { behavior: "allow" });
-      return selectedOption
-        ? {
-            outcome: {
-              outcome: "selected",
-              optionId: selectedOption.optionId,
-            },
-          }
-        : { outcome: { outcome: "cancelled" } };
-    }
-
     const requestId = randomUUID();
     let toolSnapshot =
       this.toolCalls.get(params.toolCall.toolCallId) ??
@@ -2049,13 +2037,6 @@ function mapPermissionRequest(
       options: params.options,
     },
   };
-}
-
-function shouldAutoApprovePermissionRequest(
-  _provider: string,
-  _currentMode: string | null,
-): boolean {
-  return false;
 }
 
 function selectPermissionOption(

@@ -27,9 +27,6 @@ import {
   type SelectorModelRow,
 } from "./combined-model-selector.utils";
 
-// TODO: this should be configured per provider in the provider manifest
-const PROVIDERS_WITH_MODEL_DESCRIPTIONS = new Set<string>();
-
 type SelectorView =
   | { kind: "all" }
   | { kind: "provider"; providerId: string; providerLabel: string };
@@ -168,12 +165,9 @@ function ModelRow({
     [onToggleFavorite, row.modelId, row.provider],
   );
 
-  const showDescription = row.description && PROVIDERS_WITH_MODEL_DESCRIPTIONS.has(row.provider);
-
   return (
     <ComboboxItem
       label={row.modelLabel}
-      description={showDescription ? row.description : undefined}
       selected={isSelected}
       disabled={disabled}
       elevated={elevated}
