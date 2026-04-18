@@ -2234,6 +2234,10 @@ Add handler methods to the Session class:
 
 ```typescript
   private async handleAddRemoteHost(msg: { requestId: string; hostAlias: string; hostname: string; user?: string; port?: number; identityFile?: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({ type: "add_remote_host_response", payload: { requestId: msg.requestId, success: false, error: "Remote host management not available" } });
+      return;
+    }
     try {
       await this.remoteHostManager.addHost({
         hostAlias: msg.hostAlias,
@@ -2259,6 +2263,10 @@ Add handler methods to the Session class:
   }
 
   private async handleRemoveRemoteHost(msg: { requestId: string; hostAlias: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({ type: "remove_remote_host_response", payload: { requestId: msg.requestId, success: false, error: "Remote host management not available" } });
+      return;
+    }
     try {
       await this.remoteHostManager.removeHost(msg.hostAlias);
 
@@ -2293,6 +2301,10 @@ Add handler methods to the Session class:
   }
 
   private async handleFetchRemoteHosts(msg: { requestId: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({ type: "fetch_remote_hosts_response", payload: { requestId: msg.requestId, hosts: [] } });
+      return;
+    }
     const hosts = this.remoteHostManager.listStatuses();
     this.emit({
       type: "fetch_remote_hosts_response",
@@ -2301,6 +2313,10 @@ Add handler methods to the Session class:
   }
 
   private async handleRetryRemoteHost(msg: { requestId: string; hostAlias: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({ type: "retry_remote_host_response", payload: { requestId: msg.requestId, success: false, error: "Remote host management not available" } });
+      return;
+    }
     try {
       await this.remoteHostManager.retryHost(msg.hostAlias);
       this.emit({
@@ -2320,6 +2336,10 @@ Add handler methods to the Session class:
   }
 
   private async handleDeployRemoteHost(msg: { requestId: string; hostAlias: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({ type: "deploy_remote_host_response", payload: { requestId: msg.requestId, success: false, error: "Remote host management not available" } });
+      return;
+    }
     try {
       await this.remoteHostManager.triggerConnect(msg.hostAlias);
       this.emit({
@@ -2344,22 +2364,31 @@ Add handler methods to the Session class:
 **Backward-compat guard:** Do NOT subscribe all sessions to host status updates unconditionally — old clients will fail to parse `remote_host_update`. Instead, track whether this session has opted in by sending `fetch_remote_hosts_request`. Only send updates to opted-in sessions:
 
 ```typescript
-    // Add a field to Session:
-    private remoteHostSubscribed = false;
+    // Add fields to Session:
+    private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
 
     // In handleFetchRemoteHosts, after emitting the response:
-    if (!this.remoteHostSubscribed && this.remoteHostManager) {
-      this.remoteHostSubscribed = true;
-      this.remoteHostManager.on("status_update", (status) => {
+    if (!this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostStatusListener = (status) => {
         this.emit({
           type: "remote_host_update",
           payload: { host: status },
         });
-      });
+      };
+      this.remoteHostManager.on("status_update", this.remoteHostStatusListener);
+    }
+
+    // In session cleanup/dispose (find the existing cleanup method that removes
+    // other subscriptions like unsubscribeAgentEvents, unsubscribeTerminalsChanged):
+    if (this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostManager.removeListener("status_update", this.remoteHostStatusListener);
+      this.remoteHostStatusListener = null;
     }
 ```
 
-This ensures old clients that never send `fetch_remote_hosts_request` never receive the new message type.
+This ensures:
+1. Old clients that never send `fetch_remote_hosts_request` never receive the new message type (backward compat).
+2. The listener is cleaned up when the session disconnects (no memory/event leak).
 
 - [ ] **Step 5: Typecheck and format**
 
