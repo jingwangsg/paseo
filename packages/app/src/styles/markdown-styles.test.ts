@@ -69,4 +69,9 @@ describe("createMarkdownStyles", () => {
       userSelect: "text",
     });
   });
+
+  it("strong text uses semibold weight for visual distinction", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.strong.fontWeight).toBe(darkTheme.fontWeight.semibold);
+  });
 });
