@@ -3,7 +3,12 @@ log.transports.console.level = "info";
 log.initialize({ spyRendererConsole: true });
 
 import { inheritLoginShellEnv } from "./login-shell-env.js";
-inheritLoginShellEnv();
+const loginShellEnvApplied = inheritLoginShellEnv();
+log.info("[shell-env] login shell env bootstrap", {
+  applied: loginShellEnvApplied,
+  shell: process.env.SHELL ?? null,
+  hasPath: typeof process.env.PATH === "string" && process.env.PATH.length > 0,
+});
 
 import path from "node:path";
 import { pathToFileURL } from "node:url";

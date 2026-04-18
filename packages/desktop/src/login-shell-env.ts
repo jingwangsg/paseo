@@ -50,7 +50,7 @@ function resolveShellEnv(): Record<string, string> | undefined {
     if (name === "tcsh" || name === "csh") {
       shellArgs = ["-ic"];
     } else {
-      shellArgs = ["-i", "-l", "-c"];
+      shellArgs = ["-l", "-c"];
     }
   }
 
@@ -101,13 +101,17 @@ function resolveShellEnv(): Record<string, string> | undefined {
  *
  * Approach borrowed from VS Code (src/vs/platform/shell/node/shellEnv.ts).
  */
-export function inheritLoginShellEnv(): void {
+export function inheritLoginShellEnv(): boolean {
   try {
     const env = resolveShellEnv();
     if (env) {
       Object.assign(process.env, env);
+      delete process.env.XDG_RUNTIME_DIR;
+      return true;
     }
   } catch {
     // Keep inherited environment if shell lookup fails.
   }
+
+  return false;
 }
