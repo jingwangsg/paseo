@@ -133,6 +133,18 @@ export async function ensureRemoteDaemon(options: {
     return { success: ready, version: remoteVersion };
   }
 
+  // If no SEA binary but a daemon is already listening on the port (e.g., started
+  // manually via tsx), skip deployment and treat it as ready.
+  if (!remoteVersion) {
+    const portCheck = await ssh.exec(
+      `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
+    );
+    if (portCheck.exitCode === 0) {
+      logger.info("Remote daemon already listening (no SEA binary, likely dev mode)");
+      return { success: true, version: "dev" };
+    }
+  }
+
   const binary = await getBinary(target);
 
   if (remoteVersion) {
