@@ -71,6 +71,17 @@ function parseOrderedListStart(node: MarkdownNode): number {
   return 1;
 }
 
+export function getFirstTextContent(node: any): string | null {
+  if (typeof node.content === "string") return node.content;
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      const result = getFirstTextContent(child);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
 export function getMarkdownListMarker(
   node: MarkdownNode,
   parent: unknown,

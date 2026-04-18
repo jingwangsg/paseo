@@ -71,7 +71,7 @@ import {
   parseInlinePathToken,
   type InlinePathTarget,
 } from "@/utils/inline-path";
-import { getMarkdownListMarker } from "@/utils/markdown-list";
+import { getFirstTextContent, getMarkdownListMarker } from "@/utils/markdown-list";
 import taskLists from "markdown-it-task-lists";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { markScrollInvestigationEvent } from "@/utils/scroll-jank-investigation";
@@ -733,17 +733,6 @@ function nodeHasParentType(parent: unknown, type: string): boolean {
 
 const BLOCKQUOTE_BORDER_COLORS = ["primary", "accent", "foregroundMuted"] as const;
 
-function getFirstTextContent(node: any): string | null {
-  if (typeof node.content === "string") return node.content;
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      const result = getFirstTextContent(child);
-      if (result) return result;
-    }
-  }
-  return null;
-}
-
 function getBlockquoteDepth(parent: any): number {
   if (!Array.isArray(parent)) return 0;
   let depth = 0;
@@ -1183,15 +1172,8 @@ export const AssistantMessage = memo(function AssistantMessage({
           {children}
         </View>
       ),
-      hr: (node: any) => (
-        <View
-          key={node.key}
-          style={{
-            marginVertical: theme.spacing[6],
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+      hr: (node: any, _children: ReactNode[], _parent: any, styles: any) => (
+        <View key={node.key} style={styles.hr}>
           <Text
             style={{
               color: theme.colors.foregroundMuted,

@@ -5,18 +5,7 @@ import Markdown from "react-native-markdown-display";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import { createMarkdownStyles } from "@/styles/markdown-styles";
-import { getMarkdownListMarker } from "@/utils/markdown-list";
-
-function getFirstTextContent(node: any): string | null {
-  if (typeof node.content === "string") return node.content;
-  if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      const result = getFirstTextContent(child);
-      if (result) return result;
-    }
-  }
-  return null;
-}
+import { getFirstTextContent, getMarkdownListMarker } from "@/utils/markdown-list";
 
 function createPlanMarkdownRules(theme: Theme) {
   return {
