@@ -586,6 +586,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
   archivedAt: z.string().nullable().optional(),
+  executionHost: ExecutionHostSchema.default({ kind: "local" as const }),
 });
 
 export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
@@ -837,6 +838,7 @@ export const CreateAgentRequestMessageSchema = z.object({
     .optional(),
   git: GitSetupOptionsSchema.optional(),
   labels: z.record(z.string()).default({}),
+  host: z.string().optional(),
   requestId: z.string(),
 });
 

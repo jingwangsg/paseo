@@ -149,6 +149,7 @@ function makeFetchAgentsEntry(input: {
       attentionTimestamp: input.requiresAttention && input.attentionReason ? input.updatedAt : null,
       archivedAt: input.archivedAt ?? null,
       labels: {},
+      executionHost: { kind: "local" as const },
     },
     project: {
       projectKey: input.cwd,

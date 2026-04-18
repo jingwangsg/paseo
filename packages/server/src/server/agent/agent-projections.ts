@@ -107,6 +107,7 @@ export function toAgentPayload(
     persistence: sanitizePersistenceHandle(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
+    executionHost: { kind: "local" as const },
   };
 
   const usage = sanitizeUsage(agent.lastUsage);
@@ -198,6 +199,7 @@ export function buildStoredAgentPayload(
     attentionTimestamp: record.attentionTimestamp ?? null,
     archivedAt: record.archivedAt ?? null,
     labels: record.labels,
+    executionHost: { kind: "local" as const },
   };
 }
 
