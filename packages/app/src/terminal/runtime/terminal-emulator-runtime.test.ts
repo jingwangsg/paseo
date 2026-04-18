@@ -242,4 +242,108 @@ describe("terminal-emulator-runtime", () => {
 
     expect(fitAndEmitResize).not.toHaveBeenCalled();
   });
+
+  it("splits large writes into frame-budgeted chunks", () => {
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+    const onCommitted = vi.fn();
+
+    // 150KB string — exceeds the 64KB frame budget
+    const largeText = "x".repeat(150 * 1024);
+    runtime.write({ text: largeText, onCommitted });
+
+    // First chunk should be dispatched immediately (64KB)
+    expect(writeTexts.length).toBe(1);
+    expect(writeTexts[0]!.length).toBe(64 * 1024);
+    expect(onCommitted).not.toHaveBeenCalled();
+
+    // Simulate xterm completing the first chunk write
+    writeCallbacks[0]?.();
+
+    // Second chunk dispatched after first completes (another 64KB)
+    expect(writeTexts.length).toBe(2);
+    expect(writeTexts[1]!.length).toBe(64 * 1024);
+
+    // Complete second chunk
+    writeCallbacks[1]?.();
+
+    // Third chunk: remaining 22KB
+    expect(writeTexts.length).toBe(3);
+    expect(writeTexts[2]!.length).toBe(150 * 1024 - 128 * 1024);
+
+    // Complete third chunk — onCommitted fires
+    writeCallbacks[2]?.();
+    expect(onCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not chunk writes smaller than the frame budget", () => {
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+    const onCommitted = vi.fn();
+
+    const smallText = "hello world";
+    runtime.write({ text: smallText, onCommitted });
+
+    expect(writeTexts).toEqual(["hello world"]);
+
+    writeCallbacks[0]?.();
+    expect(onCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces screen-clear + subsequent write into a single terminal.write call", () => {
+    vi.useFakeTimers();
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+
+    // Simulate Ink redraw: clear screen then write new content
+    runtime.write({ text: "\x1b[2J" });
+    runtime.write({ text: "new frame content" });
+
+    // The flicker filter should hold the clear and coalesce with the next write
+    expect(writeTexts).toEqual(["\x1b[2Jnew frame content"]);
+
+    writeCallbacks[0]?.();
+    vi.useRealTimers();
+  });
+
+  it("flushes a screen-clear after 50ms if no follow-up data arrives", () => {
+    vi.useFakeTimers();
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.write({ text: "\x1b[2J" });
+
+    // Nothing written yet — held by flicker filter
+    expect(writeTexts).toEqual([]);
+
+    // After 50ms, flush the clear on its own
+    vi.advanceTimersByTime(50);
+    expect(writeTexts).toEqual(["\x1b[2J"]);
+
+    vi.useRealTimers();
+  });
+
+  it("does not delay writes that contain no screen-clear sequences", () => {
+    const { runtime, writeTexts } = createRuntimeWithTerminal();
+
+    runtime.write({ text: "hello world" });
+
+    expect(writeTexts).toEqual(["hello world"]);
+  });
+});
+
+describe("touch scroll momentum", () => {
+  it("decays velocity to zero over multiple frames", () => {
+    // Simulate the momentum decay loop as a pure computation
+    let velocity = 5.0; // px per ms
+    const DECAY = 0.92;
+    const STOP_THRESHOLD = 0.5;
+    let frames = 0;
+
+    while (Math.abs(velocity) > STOP_THRESHOLD && frames < 200) {
+      velocity *= DECAY;
+      frames += 1;
+    }
+
+    // Velocity should decay below threshold within a reasonable number of frames
+    expect(Math.abs(velocity)).toBeLessThan(STOP_THRESHOLD);
+    expect(frames).toBeGreaterThan(5);
+    expect(frames).toBeLessThan(100);
+  });
 });

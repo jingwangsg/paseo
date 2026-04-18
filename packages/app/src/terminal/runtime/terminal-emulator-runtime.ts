@@ -46,7 +46,6 @@ type TerminalEmulatorRuntimeDisposables = {
   removeWindowFocus: () => void;
   removeDocumentVisibilityChange: () => void;
   removeVisualViewportResize: () => void;
-  clearFitInterval: () => void;
   clearFitTimeouts: () => void;
   removeFontListeners: () => void;
   removeTouchListeners: () => void;
@@ -78,8 +77,14 @@ const isMac =
     /Mac/i.test((navigator as any).platform ?? ""));
 
 const DEFAULT_TOUCH_SCROLL_LINE_HEIGHT_PX = 18;
+const TOUCH_MOMENTUM_DECAY = 0.92;
+const TOUCH_MOMENTUM_STOP_THRESHOLD_PX = 0.5;
+const TOUCH_MOMENTUM_FRAME_MS = 16;
 const FIT_TIMEOUT_DELAYS_MS = [0, 16, 48, 120, 250, 500, 1_000, 2_000];
 const OUTPUT_OPERATION_TIMEOUT_MS = 5_000;
+const OUTPUT_FRAME_BUDGET_BYTES = 64 * 1024;
+const FLICKER_FILTER_DELAY_MS = 50;
+const SCREEN_CLEAR_PATTERN = /^\x1b\[(?:\d*J|H\x1b\[\d*J)/;
 
 const DEFAULT_TERMINAL_FONT_FAMILY = [
   // Prefer common developer fonts, with Nerd Font variants for prompt/TUI glyphs.
@@ -124,6 +129,12 @@ export class TerminalEmulatorRuntime {
   private inFlightOutputOperation: TerminalOutputOperation | null = null;
   private inFlightOutputOperationTimeout: ReturnType<typeof setTimeout> | null = null;
   private suppressInput = false;
+  private flickerBuffer: {
+    text: string;
+    suppressInput?: boolean;
+    onCommitted?: () => void;
+  } | null = null;
+  private flickerTimer: ReturnType<typeof setTimeout> | null = null;
 
   private handleVisibilityRestore = (): void => {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -374,9 +385,6 @@ export class TerminalEmulatorRuntime {
     const visualViewportResizeHandler = () => fitAndEmitResize(false);
     visualViewport?.addEventListener("resize", visualViewportResizeHandler);
 
-    const fitInterval = window.setInterval(() => {
-      fitAndEmitResize(false);
-    }, 250);
     const fitTimeouts = FIT_TIMEOUT_DELAYS_MS.map((delayMs) =>
       window.setTimeout(() => {
         fitAndEmitResize(true);
@@ -425,9 +433,6 @@ export class TerminalEmulatorRuntime {
       removeVisualViewportResize: () => {
         visualViewport?.removeEventListener("resize", visualViewportResizeHandler);
       },
-      clearFitInterval: () => {
-        window.clearInterval(fitInterval);
-      },
       clearFitTimeouts: () => {
         for (const handle of fitTimeouts) {
           window.clearTimeout(handle);
@@ -466,7 +471,6 @@ export class TerminalEmulatorRuntime {
       disposables.removeWindowFocus();
       disposables.removeDocumentVisibilityChange();
       disposables.removeVisualViewportResize();
-      disposables.clearFitInterval();
       disposables.clearFitTimeouts();
       disposables.removeFontListeners();
       disposables.removeTouchListeners();
@@ -483,6 +487,55 @@ export class TerminalEmulatorRuntime {
       input.onCommitted?.();
       return;
     }
+
+    // Flicker filter: hold screen-clear output briefly to coalesce with subsequent data.
+    if (this.flickerBuffer !== null) {
+      // Follow-up data arrived while a clear was buffered — coalesce and flush.
+      const buffered = this.flickerBuffer;
+      this.flickerBuffer = null;
+      if (this.flickerTimer !== null) {
+        clearTimeout(this.flickerTimer);
+        this.flickerTimer = null;
+      }
+      buffered.onCommitted?.();
+      this.enqueueWrite({
+        text: buffered.text + input.text,
+        suppressInput: input.suppressInput,
+        onCommitted: input.onCommitted,
+      });
+      return;
+    }
+
+    if (SCREEN_CLEAR_PATTERN.test(input.text)) {
+      // Buffer the clear and wait for follow-up data.
+      this.flickerBuffer = {
+        text: input.text,
+        suppressInput: input.suppressInput,
+        onCommitted: input.onCommitted,
+      };
+      this.flickerTimer = setTimeout(() => {
+        const buffered = this.flickerBuffer;
+        this.flickerBuffer = null;
+        this.flickerTimer = null;
+        if (buffered !== null) {
+          this.enqueueWrite(buffered);
+        }
+      }, FLICKER_FILTER_DELAY_MS);
+      return;
+    }
+
+    this.enqueueWrite({
+      text: input.text,
+      suppressInput: input.suppressInput,
+      onCommitted: input.onCommitted,
+    });
+  }
+
+  private enqueueWrite(input: {
+    text: string;
+    suppressInput?: boolean;
+    onCommitted?: () => void;
+  }): void {
     this.outputOperations.push({
       type: "write",
       text: input.text,
@@ -547,6 +600,15 @@ export class TerminalEmulatorRuntime {
   }
 
   unmount(): void {
+    // Flush any pending flicker-buffered output.
+    if (this.flickerTimer !== null) {
+      clearTimeout(this.flickerTimer);
+      this.flickerTimer = null;
+    }
+    if (this.flickerBuffer !== null) {
+      // Drop the buffered clear — terminal is being torn down.
+      this.flickerBuffer = null;
+    }
     this.clearInFlightOutputTimeout();
     const inFlightOperation = this.inFlightOutputOperation;
     this.inFlightOutputOperation = null;
@@ -628,13 +690,38 @@ export class TerminalEmulatorRuntime {
       finalizeOperation(operation);
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
-    try {
-      terminal.write(text, () => {
+    if (text.length <= OUTPUT_FRAME_BUDGET_BYTES) {
+      try {
+        terminal.write(text, () => {
+          finalizeOperation(operation);
+        });
+      } catch {
         finalizeOperation(operation);
-      });
-    } catch {
-      finalizeOperation(operation);
+      }
+      return;
     }
+
+    let offset = 0;
+    const writeNextChunk = () => {
+      if (this.inFlightOutputOperation !== operation || !this.terminal) {
+        return;
+      }
+      const chunk = text.slice(offset, offset + OUTPUT_FRAME_BUDGET_BYTES);
+      offset += OUTPUT_FRAME_BUDGET_BYTES;
+      const isLastChunk = offset >= text.length;
+      try {
+        terminal.write(chunk, () => {
+          if (isLastChunk) {
+            finalizeOperation(operation);
+          } else {
+            writeNextChunk();
+          }
+        });
+      } catch {
+        finalizeOperation(operation);
+      }
+    };
+    writeNextChunk();
   }
 
   private clearInFlightOutputTimeout(): void {
@@ -765,6 +852,10 @@ export class TerminalEmulatorRuntime {
     const touchScrollLineHeightPx =
       measuredLineHeight > 0 ? measuredLineHeight : DEFAULT_TOUCH_SCROLL_LINE_HEIGHT_PX;
 
+    let velocityPxPerMs = 0;
+    let lastTouchTimestamp = 0;
+    let momentumRaf: number | null = null;
+
     const activeTouch = {
       identifier: -1,
       startX: 0,
@@ -774,7 +865,48 @@ export class TerminalEmulatorRuntime {
       mode: null as "vertical" | "horizontal" | null,
     };
 
+    const cancelMomentum = () => {
+      if (momentumRaf !== null) {
+        cancelAnimationFrame(momentumRaf);
+        momentumRaf = null;
+      }
+      velocityPxPerMs = 0;
+    };
+
+    const applyScrollDelta = (deltaPx: number) => {
+      touchScrollRemainderPx += deltaPx;
+      const lineDelta = Math.trunc(touchScrollRemainderPx / touchScrollLineHeightPx);
+      if (lineDelta !== 0) {
+        input.terminal.scrollLines(-lineDelta);
+        touchScrollRemainderPx -= lineDelta * touchScrollLineHeightPx;
+      }
+    };
+
+    const startMomentum = () => {
+      if (Math.abs(velocityPxPerMs) < TOUCH_MOMENTUM_STOP_THRESHOLD_PX / TOUCH_MOMENTUM_FRAME_MS) {
+        velocityPxPerMs = 0;
+        return;
+      }
+
+      const step = () => {
+        velocityPxPerMs *= TOUCH_MOMENTUM_DECAY;
+        if (
+          Math.abs(velocityPxPerMs) <
+          TOUCH_MOMENTUM_STOP_THRESHOLD_PX / TOUCH_MOMENTUM_FRAME_MS
+        ) {
+          momentumRaf = null;
+          velocityPxPerMs = 0;
+          return;
+        }
+        applyScrollDelta(velocityPxPerMs * TOUCH_MOMENTUM_FRAME_MS);
+        momentumRaf = requestAnimationFrame(step);
+      };
+      momentumRaf = requestAnimationFrame(step);
+    };
+
     const touchStartHandler = (event: TouchEvent) => {
+      cancelMomentum();
+
       if (event.touches.length !== 1) {
         touchScrollRemainderPx = 0;
         activeTouch.identifier = -1;
@@ -797,6 +929,7 @@ export class TerminalEmulatorRuntime {
       activeTouch.lastY = touch.clientY;
       activeTouch.mode = null;
       touchScrollRemainderPx = 0;
+      lastTouchTimestamp = performance.now();
     };
 
     const touchMoveHandler = (event: TouchEvent) => {
@@ -829,12 +962,12 @@ export class TerminalEmulatorRuntime {
         return;
       }
 
-      touchScrollRemainderPx += deltaY;
-      const lineDelta = Math.trunc(touchScrollRemainderPx / touchScrollLineHeightPx);
-      if (lineDelta !== 0) {
-        input.terminal.scrollLines(-lineDelta);
-        touchScrollRemainderPx -= lineDelta * touchScrollLineHeightPx;
-      }
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastTouchTimestamp);
+      velocityPxPerMs = deltaY / elapsed;
+      lastTouchTimestamp = now;
+
+      applyScrollDelta(deltaY);
 
       event.preventDefault();
     };
@@ -844,13 +977,14 @@ export class TerminalEmulatorRuntime {
         (touch) => touch.identifier === activeTouch.identifier,
       );
       if (activeTouchEnded || event.touches.length === 0) {
-        touchScrollRemainderPx = 0;
         activeTouch.identifier = -1;
         activeTouch.mode = null;
+        startMomentum();
       }
     };
 
     const touchCancelHandler = () => {
+      cancelMomentum();
       touchScrollRemainderPx = 0;
       activeTouch.identifier = -1;
       activeTouch.mode = null;
@@ -862,6 +996,7 @@ export class TerminalEmulatorRuntime {
     input.root.addEventListener("touchcancel", touchCancelHandler, { passive: true });
 
     return () => {
+      cancelMomentum();
       input.root.removeEventListener("touchstart", touchStartHandler);
       input.root.removeEventListener("touchmove", touchMoveHandler);
       input.root.removeEventListener("touchend", touchEndHandler);
