@@ -424,5 +424,11 @@ export function createCompactMarkdownStyles(theme: Theme) {
       fontSize: theme.fontSize.xs,
       padding: theme.spacing[2],
     },
+
+    task_list_item_checkbox: {
+      ...baseStyles.task_list_item_checkbox,
+      width: 15,
+      height: 15,
+    },
   };
 }
