@@ -7,8 +7,9 @@ import {
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
-import type { WorkspaceDescriptorPayload } from "@server/shared/messages";
+import type { WorkspaceDescriptorPayload, RemoteHostStatusPayload } from "@server/shared/messages";
 import { projectDisplayNameFromProjectId } from "@/utils/project-display-name";
+import type { RemoteHostStatus } from "@/components/sidebar-host-group";
 
 const EMPTY_ORDER: string[] = [];
 const EMPTY_PROJECTS: SidebarProjectEntry[] = [];
@@ -38,12 +39,65 @@ export interface SidebarProjectEntry {
   workspaces: SidebarWorkspaceEntry[];
 }
 
+export interface SidebarHostGroupEntry {
+  hostAlias: string | null;
+  hostname: string | null;
+  status: RemoteHostStatus;
+  projects: SidebarProjectEntry[];
+}
+
 export interface SidebarWorkspacesListResult {
   projects: SidebarProjectEntry[];
   isLoading: boolean;
   isInitialLoad: boolean;
   isRevalidating: boolean;
   refreshAll: () => void;
+}
+
+export function groupProjectsByHost(
+  projects: SidebarProjectEntry[],
+  remoteHosts: Map<string, RemoteHostStatusPayload>,
+): SidebarHostGroupEntry[] {
+  const localProjects: SidebarProjectEntry[] = [];
+  const byAlias = new Map<string, SidebarProjectEntry[]>();
+
+  for (const project of projects) {
+    if (project.executionHost.kind === "local") {
+      localProjects.push(project);
+    } else {
+      const alias = project.executionHost.hostAlias;
+      const bucket = byAlias.get(alias) ?? [];
+      bucket.push(project);
+      byAlias.set(alias, bucket);
+    }
+  }
+
+  const groups: SidebarHostGroupEntry[] = [];
+
+  // Local group always first
+  groups.push({
+    hostAlias: null,
+    hostname: null,
+    status: "ready",
+    projects: localProjects,
+  });
+
+  // Remote groups sorted by alias
+  const sortedAliases = Array.from(new Set([...remoteHosts.keys(), ...byAlias.keys()])).sort(
+    (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+
+  for (const alias of sortedAliases) {
+    const hostInfo = remoteHosts.get(alias);
+    groups.push({
+      hostAlias: alias,
+      hostname: hostInfo?.hostname ?? null,
+      status: hostInfo?.status ?? "registered",
+      projects: byAlias.get(alias) ?? [],
+    });
+  }
+
+  return groups;
 }
 
 const SIDEBAR_BUCKET_PRIORITY: Record<SidebarStateBucket, number> = {

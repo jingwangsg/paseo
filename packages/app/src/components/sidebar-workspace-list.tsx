@@ -51,7 +51,9 @@ import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
 import {
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
+  groupProjectsByHost,
 } from "@/hooks/use-sidebar-workspaces-list";
+import { SidebarHostGroup } from "@/components/sidebar-host-group";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
@@ -97,6 +99,7 @@ const workspaceKeyExtractor = (workspace: SidebarWorkspaceEntry) => workspace.wo
 
 const projectKeyExtractor = (project: SidebarProjectEntry) => project.projectKey;
 const EMPTY_WORKSPACES = new Map();
+const EMPTY_REMOTE_HOSTS_MAP = new Map();
 const WORKSPACE_STATUS_DOT_WIDTH = 14;
 const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
@@ -1629,6 +1632,11 @@ export function SidebarWorkspaceList({
     new Map(),
   );
   const showShortcutBadges = useShowShortcutBadges();
+  const remoteHosts = useSessionStore((state) =>
+    serverId
+      ? (state.sessions[serverId]?.remoteHosts ?? EMPTY_REMOTE_HOSTS_MAP)
+      : EMPTY_REMOTE_HOSTS_MAP,
+  );
 
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
@@ -1877,6 +1885,15 @@ export function SidebarWorkspaceList({
     ],
   );
 
+  const hasRemoteHosts = remoteHosts.size > 0;
+
+  const hostGroups = useMemo(() => {
+    if (!hasRemoteHosts) {
+      return null;
+    }
+    return groupProjectsByHost(projects, remoteHosts);
+  }, [hasRemoteHosts, projects, remoteHosts]);
+
   const content = (
     <>
       {projects.length === 0 ? (
@@ -1887,6 +1904,30 @@ export function SidebarWorkspaceList({
             Add project
           </Button>
         </View>
+      ) : hostGroups ? (
+        hostGroups.map((group) => (
+          <View key={group.hostAlias ?? "__local__"}>
+            <SidebarHostGroup
+              hostAlias={group.hostAlias}
+              status={group.status}
+              projectCount={group.projects.length}
+            />
+            {group.projects.length > 0 ? (
+              <DraggableList
+                testID={`sidebar-project-list-${group.hostAlias ?? "local"}`}
+                data={group.projects}
+                keyExtractor={projectKeyExtractor}
+                renderItem={renderProject}
+                onDragEnd={handleProjectDragEnd}
+                scrollEnabled={false}
+                useDragHandle
+                nestable={platformIsNative}
+                simultaneousGestureRef={parentGestureRef}
+                containerStyle={styles.projectListContainer}
+              />
+            ) : null}
+          </View>
+        ))
       ) : (
         <DraggableList
           testID="sidebar-project-list"
