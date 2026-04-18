@@ -27,6 +27,7 @@ import {
   AGENT_PROVIDER_DEFINITIONS,
   BUILTIN_PROVIDER_IDS,
   getAgentProviderDefinition,
+  getModeVisuals,
   type AgentProviderDefinition,
 } from "./provider-manifest.js";
 
@@ -51,6 +52,7 @@ type ProviderClientFactory = (
 ) => AgentClient;
 
 type ResolvedProvider = {
+  baseProviderId: string;
   definition: AgentProviderDefinition;
   runtimeSettings?: ProviderRuntimeSettings;
   profileModels: ProviderProfileModel[];
@@ -314,11 +316,15 @@ function createRegistryEntry(
       return modes.map((mode) => {
         if (mode.icon && mode.colorTier) return mode;
         const definitionMode = resolved.definition.modes.find((d) => d.id === mode.id);
-        if (!definitionMode) return mode;
+        const fallbackVisuals =
+          definitionMode !== undefined
+            ? { icon: definitionMode.icon, colorTier: definitionMode.colorTier }
+            : getModeVisuals(resolved.baseProviderId, mode.id, [resolved.definition]);
+        if (!fallbackVisuals) return mode;
         return {
           ...mode,
-          icon: mode.icon ?? definitionMode.icon,
-          colorTier: mode.colorTier ?? definitionMode.colorTier,
+          icon: mode.icon ?? fallbackVisuals.icon,
+          colorTier: mode.colorTier ?? fallbackVisuals.colorTier,
         };
       });
     },
@@ -340,6 +346,7 @@ function buildResolvedBuiltinProviders(
     );
 
     resolvedProviders.set(definition.id, {
+      baseProviderId: definition.id,
       definition: applyOverrideToDefinition(definition, override),
       runtimeSettings: mergedRuntimeSettings,
       profileModels: override?.models ?? [],
@@ -370,6 +377,7 @@ function addDerivedProviders(
       }
 
       resolvedProviders.set(providerId, {
+        baseProviderId: providerId,
         definition: createDerivedDefinition(
           providerId,
           {
@@ -409,6 +417,7 @@ function addDerivedProviders(
     const baseFactory = getProviderClientFactory(override.extends);
 
     resolvedProviders.set(providerId, {
+      baseProviderId: baseProvider.baseProviderId,
       definition: createDerivedDefinition(providerId, baseDefinition, override),
       runtimeSettings: mergedRuntimeSettings,
       profileModels: override.models ?? [],
