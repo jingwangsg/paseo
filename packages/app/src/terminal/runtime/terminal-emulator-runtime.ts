@@ -84,7 +84,7 @@ const FIT_TIMEOUT_DELAYS_MS = [0, 16, 48, 120, 250, 500, 1_000, 2_000];
 const OUTPUT_OPERATION_TIMEOUT_MS = 5_000;
 const OUTPUT_FRAME_BUDGET_BYTES = 64 * 1024;
 const FLICKER_FILTER_DELAY_MS = 50;
-const SCREEN_CLEAR_PATTERN = /\x1b\[\d*J|\x1b\[H\x1b\[\d*J/;
+const SCREEN_CLEAR_PATTERN = /^\x1b\[(?:\d*J|H\x1b\[\d*J)/;
 
 const DEFAULT_TERMINAL_FONT_FAMILY = [
   // Prefer common developer fonts, with Nerd Font variants for prompt/TUI glyphs.
@@ -129,7 +129,11 @@ export class TerminalEmulatorRuntime {
   private inFlightOutputOperation: TerminalOutputOperation | null = null;
   private inFlightOutputOperationTimeout: ReturnType<typeof setTimeout> | null = null;
   private suppressInput = false;
-  private flickerBuffer: string | null = null;
+  private flickerBuffer: {
+    text: string;
+    suppressInput?: boolean;
+    onCommitted?: () => void;
+  } | null = null;
   private flickerTimer: ReturnType<typeof setTimeout> | null = null;
 
   private handleVisibilityRestore = (): void => {
@@ -487,14 +491,15 @@ export class TerminalEmulatorRuntime {
     // Flicker filter: hold screen-clear output briefly to coalesce with subsequent data.
     if (this.flickerBuffer !== null) {
       // Follow-up data arrived while a clear was buffered — coalesce and flush.
-      const coalesced = this.flickerBuffer + input.text;
+      const buffered = this.flickerBuffer;
       this.flickerBuffer = null;
       if (this.flickerTimer !== null) {
         clearTimeout(this.flickerTimer);
         this.flickerTimer = null;
       }
+      buffered.onCommitted?.();
       this.enqueueWrite({
-        text: coalesced,
+        text: buffered.text + input.text,
         suppressInput: input.suppressInput,
         onCommitted: input.onCommitted,
       });
@@ -503,17 +508,17 @@ export class TerminalEmulatorRuntime {
 
     if (SCREEN_CLEAR_PATTERN.test(input.text)) {
       // Buffer the clear and wait for follow-up data.
-      this.flickerBuffer = input.text;
+      this.flickerBuffer = {
+        text: input.text,
+        suppressInput: input.suppressInput,
+        onCommitted: input.onCommitted,
+      };
       this.flickerTimer = setTimeout(() => {
         const buffered = this.flickerBuffer;
         this.flickerBuffer = null;
         this.flickerTimer = null;
         if (buffered !== null) {
-          this.enqueueWrite({
-            text: buffered,
-            suppressInput: input.suppressInput,
-            onCommitted: input.onCommitted,
-          });
+          this.enqueueWrite(buffered);
         }
       }, FLICKER_FILTER_DELAY_MS);
       return;
