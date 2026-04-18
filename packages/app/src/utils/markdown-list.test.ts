@@ -38,4 +38,31 @@ describe("getMarkdownListMarker", () => {
       marker: "1.",
     });
   });
+
+  it("returns filled bullet for top-level bullet list", () => {
+    const node = { type: "list_item", index: 0 };
+    const parent = [{ type: "bullet_list" }];
+    const result = getMarkdownListMarker(node, parent);
+    expect(result).toEqual({ isOrdered: false, marker: "•" });
+  });
+
+  it("returns hollow bullet for second-level nested bullet list", () => {
+    const node = { type: "list_item", index: 0 };
+    const parent = [{ type: "bullet_list" }, { type: "list_item" }, { type: "bullet_list" }];
+    const result = getMarkdownListMarker(node, parent);
+    expect(result).toEqual({ isOrdered: false, marker: "◦" });
+  });
+
+  it("returns square bullet for third-level nested bullet list", () => {
+    const node = { type: "list_item", index: 0 };
+    const parent = [
+      { type: "bullet_list" },
+      { type: "list_item" },
+      { type: "bullet_list" },
+      { type: "list_item" },
+      { type: "bullet_list" },
+    ];
+    const result = getMarkdownListMarker(node, parent);
+    expect(result).toEqual({ isOrdered: false, marker: "▪" });
+  });
 });

@@ -8,7 +8,7 @@ type MarkdownNode = {
   children?: MarkdownNode[];
 };
 
-const LIST_BULLET = "•";
+const BULLET_MARKERS = ["•", "◦", "▪"] as const;
 const DEFAULT_ORDERED_LIST_MARKUP = ".";
 
 function toParentNodes(parent: unknown): MarkdownNode[] {
@@ -27,6 +27,17 @@ function getNearestListParent(parent: unknown): MarkdownNode | undefined {
   return toParentNodes(parent).find(
     (ancestor) => ancestor?.type === "ordered_list" || ancestor?.type === "bullet_list",
   );
+}
+
+function getBulletNestingDepth(parent: unknown): number {
+  const ancestors = toParentNodes(parent);
+  let depth = 0;
+  for (const ancestor of ancestors) {
+    if (ancestor?.type === "bullet_list") {
+      depth++;
+    }
+  }
+  return Math.max(0, depth - 1);
 }
 
 function getOrderedListItemIndex(node: MarkdownNode, listParent: MarkdownNode): number {
@@ -69,9 +80,11 @@ export function getMarkdownListMarker(
 } {
   const listParent = getNearestListParent(parent);
   if (!listParent || listParent.type !== "ordered_list") {
+    const depth = getBulletNestingDepth(parent);
+    const marker = BULLET_MARKERS[Math.min(depth, BULLET_MARKERS.length - 1)];
     return {
       isOrdered: false,
-      marker: LIST_BULLET,
+      marker,
     };
   }
 
