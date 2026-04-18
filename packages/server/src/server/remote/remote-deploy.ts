@@ -77,7 +77,7 @@ export async function waitForRemoteDaemon(ssh: SshClient, logger: Logger): Promi
     const running = await isRemoteDaemonRunning(ssh);
     if (running) {
       const portCheck = await ssh.exec(
-        `(echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
+        `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
       );
       if (portCheck.exitCode === 0) {
         logger.info("Remote daemon is ready");

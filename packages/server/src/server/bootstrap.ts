@@ -121,7 +121,7 @@ import type {
 } from "./agent/provider-launch-config.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
 import { RemoteHostRegistry } from "./remote/remote-host-registry.js";
-import { RemoteHostManager } from "./remote/remote-host-manager.js";
+import { RemoteHostManager, type RemoteHostStatusEntry } from "./remote/remote-host-manager.js";
 import { RemoteSyncService } from "./remote/remote-sync.js";
 
 type AgentMcpTransportMap = Map<string, StreamableHTTPServerTransport>;
@@ -471,7 +471,14 @@ export async function createPaseoDaemon(
       });
     });
 
-    // Wire sync: when a host is removed or goes unreachable, stop syncing
+    // Wire sync: when a host leaves ready state, stop syncing
+    remoteHostManager.on("status_update", (entry: RemoteHostStatusEntry) => {
+      if (entry.status !== "ready") {
+        remoteSyncService.stopSyncForHost(entry.hostAlias);
+      }
+    });
+
+    // Wire sync: when a host is removed, stop syncing
     remoteHostManager.on("host_removed", (hostAlias: string) => {
       remoteSyncService.stopSyncForHost(hostAlias);
     });

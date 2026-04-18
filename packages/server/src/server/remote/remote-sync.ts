@@ -73,25 +73,24 @@ export function reconcileRemoteWorkspaces(options: {
 }
 
 interface RemoteDaemonApi {
-  fetchProjects(): Promise<PersistedProjectRecord[]>;
-  fetchWorkspaces(): Promise<PersistedWorkspaceRecord[]>;
+  fetchAll(): Promise<{
+    projects: PersistedProjectRecord[];
+    workspaces: PersistedWorkspaceRecord[];
+  }>;
 }
 
 function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
   const baseUrl = `http://127.0.0.1:${tunnelPort}`;
 
   return {
-    async fetchProjects(): Promise<PersistedProjectRecord[]> {
+    async fetchAll() {
       const res = await fetch(`${baseUrl}/api/workspaces`);
       if (!res.ok) throw new Error(`Remote API error: ${res.status}`);
       const data = await res.json();
-      return data.projects ?? [];
-    },
-    async fetchWorkspaces(): Promise<PersistedWorkspaceRecord[]> {
-      const res = await fetch(`${baseUrl}/api/workspaces`);
-      if (!res.ok) throw new Error(`Remote API error: ${res.status}`);
-      const data = await res.json();
-      return data.workspaces ?? [];
+      return {
+        projects: data.projects ?? [],
+        workspaces: data.workspaces ?? [],
+      };
     },
   };
 }
@@ -128,9 +127,10 @@ export class RemoteSyncService {
 
     const sync = async () => {
       try {
-        const [remoteProjects, allProjects] = await Promise.all([
-          api.fetchProjects(),
+        const [remote, allProjects, allWorkspaces] = await Promise.all([
+          api.fetchAll(),
           projectRegistry.list(),
+          workspaceRegistry.list(),
         ]);
 
         const existingMirrorIds = new Set(
@@ -140,16 +140,11 @@ export class RemoteSyncService {
         reconcileRemoteProjects({
           hostAlias,
           hostname,
-          remoteProjects,
+          remoteProjects: remote.projects,
           existingMirrorIds,
           onUpsert: (record) => projectRegistry.upsert(record),
           onRemove: (id) => projectRegistry.remove(id),
         });
-
-        const [remoteWorkspaces, allWorkspaces] = await Promise.all([
-          api.fetchWorkspaces(),
-          workspaceRegistry.list(),
-        ]);
 
         const existingWsMirrorIds = new Set(
           allWorkspaces.filter((w) => w.workspaceId.startsWith(prefix)).map((w) => w.workspaceId),
@@ -157,7 +152,7 @@ export class RemoteSyncService {
 
         reconcileRemoteWorkspaces({
           hostAlias,
-          remoteWorkspaces,
+          remoteWorkspaces: remote.workspaces,
           existingMirrorIds: existingWsMirrorIds,
           onUpsert: (record) => workspaceRegistry.upsert(record),
           onRemove: (id) => workspaceRegistry.remove(id),

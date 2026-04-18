@@ -838,7 +838,6 @@ export const CreateAgentRequestMessageSchema = z.object({
     .optional(),
   git: GitSetupOptionsSchema.optional(),
   labels: z.record(z.string()).default({}),
-  host: z.string().optional(),
   requestId: z.string(),
 });
 

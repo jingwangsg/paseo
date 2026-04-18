@@ -68,7 +68,7 @@ export async function runLsCommand(
     const items: HostListItem[] = response.hosts.map((h) => ({
       alias: h.hostAlias,
       hostname: h.hostname,
-      user: (h as Record<string, unknown>).user ? String((h as Record<string, unknown>).user) : "-",
+      user: h.user ?? "-",
       status: h.status,
       tunnel: h.tunnelPort ? String(h.tunnelPort) : "-",
       version: h.daemonVersion ?? "-",

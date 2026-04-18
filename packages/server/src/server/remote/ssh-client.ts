@@ -84,7 +84,7 @@ export class SshClient {
   }
 
   async upload(data: Buffer, remotePath: string): Promise<void> {
-    const args = [...this.buildSshArgs(), `cat > ${remotePath}`];
+    const args = [...this.buildSshArgs(), `cat > '${remotePath.replace(/'/g, "'\\''")}'`];
     return new Promise((resolve, reject) => {
       const child = spawn("ssh", args, { stdio: ["pipe", "ignore", "pipe"] });
       let stderr = "";

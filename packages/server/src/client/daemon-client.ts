@@ -213,8 +213,6 @@ export type CreateAgentRequestOptions = {
   worktreeName?: string;
   requestId?: string;
   labels?: Record<string, string>;
-  /** SSH host alias — routes creation to remote daemon */
-  host?: string;
 } & AgentConfigOverrides;
 
 type CheckoutStatusPayload = CheckoutStatusResponse["payload"];
@@ -1468,7 +1466,6 @@ export class DaemonClient {
       ...(options.labels && Object.keys(options.labels).length > 0
         ? { labels: options.labels }
         : {}),
-      ...(options.host ? { host: options.host } : {}),
     });
 
     const status = await this.sendRequest({
@@ -4031,7 +4028,6 @@ function resolveAgentConfig(options: CreateAgentRequestOptions): AgentSessionCon
     worktreeName: _worktreeName,
     requestId: _requestId,
     labels: _labels,
-    host: _host,
     ...overrides
   } = options;
 
