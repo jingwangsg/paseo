@@ -59,8 +59,13 @@ export class RemoteHostRegistry {
       }
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
+      if (code === "ENOENT") {
+        // File doesn't exist yet — start with empty cache (normal first run)
+      } else {
+        // Parse/schema/permission errors — do NOT mark as loaded, so we don't
+        // overwrite the file with an empty cache on the next write
         this.logger.error({ err: error, filePath: this.filePath }, "Failed to load hosts registry");
+        throw error;
       }
     }
     this.loaded = true;

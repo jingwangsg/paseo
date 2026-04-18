@@ -135,6 +135,9 @@ export class RemoteHostManager extends EventEmitter {
   }
 
   async removeHost(alias: string): Promise<void> {
+    // Persist removal first — if this throws, in-memory state is unchanged
+    await this.registry.remove(alias);
+
     const tunnel = this.tunnels.get(alias);
     if (tunnel) {
       tunnel.close();
@@ -142,7 +145,6 @@ export class RemoteHostManager extends EventEmitter {
     }
 
     this.hosts.delete(alias);
-    await this.registry.remove(alias);
     this.emit("host_removed", alias);
   }
 
