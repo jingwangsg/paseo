@@ -7291,11 +7291,11 @@ export class Session {
           hostAlias,
           tunnelPort,
           logger: this.sessionLogger,
+          onSessionMessage: (remoteMsg) => {
+            this.handleRemoteAgentResponse(hostAlias, remoteMsg);
+          },
         });
         this.remoteAgentProxies.set(hostAlias, proxy);
-        proxy.onSessionMessage((remoteMsg) => {
-          this.handleRemoteAgentResponse(hostAlias, remoteMsg);
-        });
       }
 
       // Forward without host field
@@ -7315,6 +7315,16 @@ export class Session {
   }
 
   private handleRemoteAgentResponse(hostAlias: string, remoteMsg: Record<string, unknown>): void {
+    const payload = remoteMsg.payload as Record<string, unknown> | undefined;
+    this.sessionLogger.info(
+      {
+        hostAlias,
+        remoteMsgType: remoteMsg.type,
+        payloadStatus: payload?.status,
+        payloadRequestId: payload?.requestId,
+      },
+      "Remote agent response received, forwarding to client",
+    );
     const rewritten = this.rewriteAgentIdsInMessage(hostAlias, remoteMsg);
     this.emit(rewritten as any);
   }

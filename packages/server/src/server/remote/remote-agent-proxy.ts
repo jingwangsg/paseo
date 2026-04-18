@@ -36,8 +36,6 @@ export function extractHostAliasFromAgentId(agentId: string): string | null {
 export interface RemoteAgentProxy {
   /** Send a JSON message to the remote daemon (as a session-level message) */
   sendSessionMessage(msg: Record<string, unknown>): void;
-  /** Register handler for messages from remote daemon */
-  onSessionMessage(handler: (msg: Record<string, unknown>) => void): void;
   /** Close the proxy connection */
   close(): void;
   /** Whether the connection is alive */
@@ -50,20 +48,23 @@ export async function createRemoteAgentProxy(options: {
   hostAlias: string;
   tunnelPort: number;
   logger: Logger;
+  /** Handler for session messages from the remote daemon. Set at creation
+   *  time so no messages are lost during the hello handshake. */
+  onSessionMessage: (msg: Record<string, unknown>) => void;
 }): Promise<RemoteAgentProxy> {
-  const { hostAlias, tunnelPort, logger } = options;
+  const { hostAlias, tunnelPort, logger, onSessionMessage } = options;
   const url = `ws://127.0.0.1:${tunnelPort}/ws`;
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
-    let messageHandler: ((msg: Record<string, unknown>) => void) | null = null;
     let alive = true;
+    let helloAcked = false;
+    const pendingMessages: Record<string, unknown>[] = [];
 
     ws.on("open", () => {
       logger.info({ hostAlias, tunnelPort }, "Remote agent proxy connected");
 
       // Send hello message to establish session on remote daemon.
-      // Must include clientType and protocolVersion per WSHelloMessageSchema.
       ws.send(
         JSON.stringify({
           type: "hello",
@@ -73,43 +74,53 @@ export async function createRemoteAgentProxy(options: {
           appVersion: "0.1.59",
         }),
       );
-
-      const proxy: RemoteAgentProxy = {
-        sendSessionMessage(msg) {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "session", message: msg }));
-          }
-        },
-        onSessionMessage(handler) {
-          messageHandler = handler;
-        },
-        close() {
-          if (alive) {
-            ws.close();
-            alive = false;
-          }
-        },
-        get alive() {
-          return alive && ws.readyState === WebSocket.OPEN;
-        },
-        get hostAlias() {
-          return hostAlias;
-        },
-      };
-
-      // Wait briefly for hello to be processed before allowing sends
-      setTimeout(() => resolve(proxy), 500);
     });
 
     ws.on("message", (data) => {
       try {
         const parsed = JSON.parse(data.toString());
-        // Remote daemon wraps session messages in { type: "session", message: ... }
-        if (parsed.type === "session" && parsed.message && messageHandler) {
-          messageHandler(parsed.message);
+
+        // The first response after hello is the server_info/status message
+        // confirming the session is established.
+        if (!helloAcked) {
+          helloAcked = true;
+          logger.info({ hostAlias }, "Remote agent proxy session established");
+
+          // Resolve the proxy now that the session is ready
+          resolve({
+            sendSessionMessage(msg) {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "session", message: msg }));
+              }
+            },
+            close() {
+              if (alive) {
+                ws.close();
+                alive = false;
+              }
+            },
+            get alive() {
+              return alive && ws.readyState === WebSocket.OPEN;
+            },
+            get hostAlias() {
+              return hostAlias;
+            },
+          });
+
+          // Flush any messages that arrived during hello
+          for (const pending of pendingMessages) {
+            onSessionMessage(pending);
+          }
+          pendingMessages.length = 0;
+          return;
         }
-      } catch {
-        // Ignore malformed messages
+
+        // Remote daemon wraps session messages in { type: "session", message: ... }
+        if (parsed.type === "session" && parsed.message) {
+          onSessionMessage(parsed.message);
+        }
+      } catch (err) {
+        logger.warn({ err, hostAlias }, "Remote proxy failed to parse message");
       }
     });
 
