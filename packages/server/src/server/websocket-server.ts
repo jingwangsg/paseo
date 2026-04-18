@@ -743,6 +743,7 @@ export class VoiceAssistantWebSocketServer {
       agentProviderRuntimeSettings: this.agentProviderRuntimeSettings,
       providerOverrides: this.providerOverrides,
       remoteHostManager: this.remoteHostManager ?? undefined,
+      daemonVersion: this.daemonVersion,
     });
 
     connection = {

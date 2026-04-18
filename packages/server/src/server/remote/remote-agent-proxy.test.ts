@@ -4,6 +4,8 @@ import {
   rewriteLocalAgentId,
   isRemoteAgentId,
   extractHostAliasFromAgentId,
+  buildRemoteDaemonWsUrl,
+  extractHostAliasFromProjectId,
 } from "./remote-agent-proxy.js";
 
 describe("remote-agent-proxy", () => {
@@ -27,5 +29,19 @@ describe("remote-agent-proxy", () => {
   test("extractHostAliasFromAgentId extracts alias", () => {
     expect(extractHostAliasFromAgentId("ssh:osmo_9000:abc-123")).toBe("osmo_9000");
     expect(extractHostAliasFromAgentId("abc-123")).toBeNull();
+  });
+
+  test("buildRemoteDaemonWsUrl builds correct URL", () => {
+    const url = buildRemoteDaemonWsUrl(41234);
+    expect(url).toBe("ws://127.0.0.1:41234/ws");
+  });
+
+  test("extractHostAliasFromProjectId extracts alias from ssh: prefix", () => {
+    expect(extractHostAliasFromProjectId("ssh:devbox:remote:github.com/user/repo")).toBe("devbox");
+  });
+
+  test("extractHostAliasFromProjectId returns null for local projects", () => {
+    expect(extractHostAliasFromProjectId("remote:github.com/user/repo")).toBeNull();
+    expect(extractHostAliasFromProjectId("/tmp/project")).toBeNull();
   });
 });

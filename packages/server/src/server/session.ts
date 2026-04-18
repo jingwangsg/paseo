@@ -473,6 +473,7 @@ export type SessionOptions = {
   agentProviderRuntimeSettings?: AgentProviderRuntimeSettingsMap;
   providerOverrides?: Record<string, ProviderOverride>;
   remoteHostManager?: RemoteHostManager;
+  daemonVersion?: string;
 };
 
 export type SessionLifecycleIntent =
@@ -647,6 +648,7 @@ export class Session {
   private readonly remoteHostManager: RemoteHostManager | null;
   private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
   private readonly remoteAgentProxies = new Map<string, RemoteAgentProxy>();
+  private readonly daemonVersion: string | null;
 
   constructor(options: SessionOptions) {
     const {
@@ -736,6 +738,7 @@ export class Session {
     this.agentProviderRuntimeSettings = agentProviderRuntimeSettings;
     this.providerOverrides = providerOverrides;
     this.remoteHostManager = options.remoteHostManager ?? null;
+    this.daemonVersion = options.daemonVersion ?? null;
     this.abortController = new AbortController();
     this.sessionLogger = logger.child({
       module: "session",
@@ -7300,6 +7303,7 @@ export class Session {
         proxy = await createRemoteAgentProxy({
           hostAlias,
           tunnelPort,
+          daemonVersion: this.daemonVersion ?? "0.0.0",
           logger: this.sessionLogger,
           onSessionMessage: (remoteMsg) => {
             this.handleRemoteAgentResponse(hostAlias, remoteMsg);
@@ -7326,7 +7330,7 @@ export class Session {
 
   private handleRemoteAgentResponse(hostAlias: string, remoteMsg: Record<string, unknown>): void {
     const payload = remoteMsg.payload as Record<string, unknown> | undefined;
-    this.sessionLogger.info(
+    this.sessionLogger.debug(
       {
         hostAlias,
         remoteMsgType: remoteMsg.type,

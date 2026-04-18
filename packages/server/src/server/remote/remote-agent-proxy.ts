@@ -29,6 +29,22 @@ export function extractHostAliasFromAgentId(agentId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers for remote daemon URLs and project IDs
+// ---------------------------------------------------------------------------
+
+export function buildRemoteDaemonWsUrl(tunnelPort: number): string {
+  return `ws://127.0.0.1:${tunnelPort}/ws`;
+}
+
+export function extractHostAliasFromProjectId(projectId: string): string | null {
+  if (!projectId.startsWith("ssh:")) return null;
+  const afterPrefix = projectId.slice(4);
+  const colonIndex = afterPrefix.indexOf(":");
+  if (colonIndex === -1) return null;
+  return afterPrefix.slice(0, colonIndex);
+}
+
+// ---------------------------------------------------------------------------
 // RemoteAgentProxy — maintains a WS connection to a remote daemon and proxies
 // agent operations bidirectionally.
 // ---------------------------------------------------------------------------
@@ -47,12 +63,13 @@ export interface RemoteAgentProxy {
 export async function createRemoteAgentProxy(options: {
   hostAlias: string;
   tunnelPort: number;
+  daemonVersion: string;
   logger: Logger;
   /** Handler for session messages from the remote daemon. Set at creation
    *  time so no messages are lost during the hello handshake. */
   onSessionMessage: (msg: Record<string, unknown>) => void;
 }): Promise<RemoteAgentProxy> {
-  const { hostAlias, tunnelPort, logger, onSessionMessage } = options;
+  const { hostAlias, tunnelPort, daemonVersion, logger, onSessionMessage } = options;
   const url = `ws://127.0.0.1:${tunnelPort}/ws`;
 
   return new Promise((resolve, reject) => {
@@ -71,7 +88,7 @@ export async function createRemoteAgentProxy(options: {
           clientId: `proxy-${hostAlias}-${Date.now()}`,
           clientType: "cli",
           protocolVersion: 1,
-          appVersion: "0.1.59",
+          appVersion: daemonVersion,
         }),
       );
     });
