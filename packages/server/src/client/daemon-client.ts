@@ -3427,6 +3427,67 @@ export class DaemonClient {
     });
   }
 
+  async addRemoteHost(input: {
+    hostAlias: string;
+    hostname: string;
+    user?: string;
+    port?: number;
+    identityFile?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "add_remote_host_request" as const, ...input },
+      responseType: "add_remote_host_response" as const,
+      timeout: 30_000,
+    });
+  }
+
+  async removeRemoteHost(input: {
+    hostAlias: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "remove_remote_host_request" as const, ...input },
+      responseType: "remove_remote_host_response" as const,
+      timeout: 10_000,
+    });
+  }
+
+  async fetchRemoteHosts(): Promise<{
+    hosts: Array<{
+      hostAlias: string;
+      hostname: string;
+      status: string;
+      tunnelPort?: number;
+      daemonVersion?: string;
+      error?: string;
+    }>;
+  }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "fetch_remote_hosts_request" as const },
+      responseType: "fetch_remote_hosts_response" as const,
+      timeout: 10_000,
+    });
+  }
+
+  async retryRemoteHost(input: {
+    hostAlias: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "retry_remote_host_request" as const, ...input },
+      responseType: "retry_remote_host_response" as const,
+      timeout: 30_000,
+    });
+  }
+
+  async deployRemoteHost(input: {
+    hostAlias: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "deploy_remote_host_request" as const, ...input },
+      responseType: "deploy_remote_host_response" as const,
+      timeout: 60_000,
+    });
+  }
+
   onTerminalStreamEvent(handler: (event: TerminalStreamEvent) => void): () => void {
     this.terminalStreamListeners.add(handler);
     return () => {
