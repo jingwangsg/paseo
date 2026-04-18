@@ -206,6 +206,14 @@ const McpServerConfigSchema = z.discriminatedUnion("type", [
 
 export const ExecutionHostSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("local") }),
+  z.object({
+    kind: z.literal("ssh"),
+    hostAlias: z.string(),
+    hostname: z.string(),
+    user: z.string().optional(),
+    port: z.number().optional(),
+    identityFile: z.string().optional(),
+  }),
 ]);
 
 export function defaultExecutionHost(): z.infer<typeof ExecutionHostSchema> {
@@ -578,6 +586,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
   archivedAt: z.string().nullable().optional(),
+  executionHost: ExecutionHostSchema.default({ kind: "local" as const }),
 });
 
 export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
@@ -828,6 +837,7 @@ export const CreateAgentRequestMessageSchema = z.object({
     )
     .optional(),
   git: GitSetupOptionsSchema.optional(),
+  host: z.string().optional(),
   labels: z.record(z.string()).default({}),
   requestId: z.string(),
 });
@@ -1434,6 +1444,43 @@ export const CaptureTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// ---------------------------------------------------------------------------
+// Remote host management messages
+// ---------------------------------------------------------------------------
+
+const AddRemoteHostRequestSchema = z.object({
+  type: z.literal("add_remote_host_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+  hostname: z.string(),
+  user: z.string().optional(),
+  port: z.number().optional(),
+  identityFile: z.string().optional(),
+});
+
+const RemoveRemoteHostRequestSchema = z.object({
+  type: z.literal("remove_remote_host_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+});
+
+const FetchRemoteHostsRequestSchema = z.object({
+  type: z.literal("fetch_remote_hosts_request"),
+  requestId: z.string(),
+});
+
+const RetryRemoteHostRequestSchema = z.object({
+  type: z.literal("retry_remote_host_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+});
+
+const DeployRemoteHostRequestSchema = z.object({
+  type: z.literal("deploy_remote_host_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+});
+
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   VoiceAudioChunkMessageSchema,
   AbortRequestMessageSchema,
@@ -1533,6 +1580,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  AddRemoteHostRequestSchema,
+  RemoveRemoteHostRequestSchema,
+  FetchRemoteHostsRequestSchema,
+  RetryRemoteHostRequestSchema,
+  DeployRemoteHostRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2775,6 +2827,69 @@ export const TerminalStreamExitSchema = z.object({
   }),
 });
 
+const RemoteHostStatusPayloadSchema = z.object({
+  hostAlias: z.string(),
+  hostname: z.string(),
+  user: z.string().optional(),
+  port: z.number().optional(),
+  status: z.enum(["registered", "connecting", "deploying", "ready", "unreachable", "failed"]),
+  tunnelPort: z.number().nullable().optional(),
+  daemonVersion: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+});
+
+const AddRemoteHostResponseSchema = z.object({
+  type: z.literal("add_remote_host_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+    host: RemoteHostStatusPayloadSchema.optional(),
+  }),
+});
+
+const RemoveRemoteHostResponseSchema = z.object({
+  type: z.literal("remove_remote_host_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
+});
+
+const FetchRemoteHostsResponseSchema = z.object({
+  type: z.literal("fetch_remote_hosts_response"),
+  payload: z.object({
+    requestId: z.string(),
+    hosts: z.array(RemoteHostStatusPayloadSchema),
+  }),
+});
+
+const RemoteHostUpdateSchema = z.object({
+  type: z.literal("remote_host_update"),
+  payload: z.object({
+    host: RemoteHostStatusPayloadSchema,
+  }),
+});
+
+const RetryRemoteHostResponseSchema = z.object({
+  type: z.literal("retry_remote_host_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
+});
+
+const DeployRemoteHostResponseSchema = z.object({
+  type: z.literal("deploy_remote_host_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
+});
+
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ActivityLogMessageSchema,
   AssistantChunkMessageSchema,
@@ -2877,6 +2992,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectResponseSchema,
   LoopLogsResponseSchema,
   LoopStopResponseSchema,
+  AddRemoteHostResponseSchema,
+  RemoveRemoteHostResponseSchema,
+  FetchRemoteHostsResponseSchema,
+  RemoteHostUpdateSchema,
+  RetryRemoteHostResponseSchema,
+  DeployRemoteHostResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;
@@ -3036,6 +3157,7 @@ export type LoopListResponse = z.infer<typeof LoopListResponseSchema>;
 export type LoopInspectResponse = z.infer<typeof LoopInspectResponseSchema>;
 export type LoopLogsResponse = z.infer<typeof LoopLogsResponseSchema>;
 export type LoopStopResponse = z.infer<typeof LoopStopResponseSchema>;
+export type RemoteHostStatusPayload = z.infer<typeof RemoteHostStatusPayloadSchema>;
 
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;

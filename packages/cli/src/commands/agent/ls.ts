@@ -16,7 +16,8 @@ export function addLsOptions(cmd: Command): Command {
       collectMultiple,
       [],
     )
-    .option("--thinking <id>", "Filter by thinking option ID");
+    .option("--thinking <id>", "Filter by thinking option ID")
+    .option("--ssh-host <alias>", "Filter agents by remote SSH host");
 }
 
 /** Agent list item for display */
@@ -27,6 +28,7 @@ export interface AgentListItem {
   provider: string;
   thinking: string;
   status: string;
+  host: string;
   cwd: string;
   created: string;
 }
@@ -78,6 +80,7 @@ export const agentLsSchema: OutputSchema<AgentListItem> = {
         return undefined;
       },
     },
+    { header: "HOST", field: "host", width: 12 },
     { header: "CWD", field: "cwd", width: 30 },
     { header: "CREATED", field: "created", width: 15 },
   ],
@@ -93,6 +96,7 @@ function toListItem(agent: AgentSnapshotPayload): AgentListItem {
     provider: model ? `${agent.provider}/${model}` : agent.provider,
     thinking: agent.effectiveThinkingOptionId ?? "auto",
     status: agent.status,
+    host: agent.executionHost?.kind === "ssh" ? agent.executionHost.hostAlias : "local",
     cwd: shortenPath(agent.cwd),
     created: relativeTime(agent.createdAt),
   };
@@ -113,6 +117,8 @@ export interface AgentLsOptions extends CommandOptions {
   label?: string[];
   /** Filter by thinking option ID */
   thinking?: string;
+  /** Filter by SSH host alias */
+  sshHost?: string;
 }
 
 /**
@@ -207,6 +213,15 @@ export async function runLsCommand(
           }
         }
         return true;
+      });
+    }
+
+    // Filter by SSH host alias if requested.
+    if (options.sshHost) {
+      const sshHostAlias = options.sshHost;
+      agents = agents.filter((a) => {
+        const host = a.executionHost;
+        return host?.kind === "ssh" && host.hostAlias === sshHostAlias;
       });
     }
 

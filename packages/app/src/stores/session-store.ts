@@ -26,6 +26,7 @@ import type {
   ProjectPlacementPayload,
   ServerCapabilities,
   WorkspaceDescriptorPayload,
+  RemoteHostStatusPayload,
 } from "@server/shared/messages";
 import { normalizeWorkspaceIdentity } from "@/utils/workspace-identity";
 import {
@@ -260,6 +261,9 @@ export interface SessionState {
   // File explorer
   fileExplorer: Map<string, AgentFileExplorerState>;
 
+  // Remote hosts
+  remoteHosts: Map<string, RemoteHostStatusPayload>;
+
   // Queued messages
   queuedMessages: Map<string, Array<{ id: string; text: string; images?: AttachmentMetadata[] }>>;
 }
@@ -373,6 +377,14 @@ interface SessionStoreActions {
       | ((prev: Map<string, AgentFileExplorerState>) => Map<string, AgentFileExplorerState>),
   ) => void;
 
+  // Remote hosts
+  setRemoteHosts: (
+    serverId: string,
+    hosts:
+      | Map<string, RemoteHostStatusPayload>
+      | ((prev: Map<string, RemoteHostStatusPayload>) => Map<string, RemoteHostStatusPayload>),
+  ) => void;
+
   // Queued messages
   setQueuedMessages: (
     serverId: string,
@@ -418,6 +430,7 @@ function createInitialSessionState(serverId: string, client: DaemonClient): Sess
     workspaces: new Map(),
     pendingPermissions: new Map(),
     fileExplorer: new Map(),
+    remoteHosts: new Map(),
     queuedMessages: new Map(),
   };
 }
@@ -1074,6 +1087,27 @@ export const useSessionStore = create<SessionStore>()(
             sessions: {
               ...prev.sessions,
               [serverId]: { ...session, fileExplorer: nextState },
+            },
+          };
+        });
+      },
+
+      // Remote hosts
+      setRemoteHosts: (serverId, hosts) => {
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session) {
+            return prev;
+          }
+          const nextHosts = typeof hosts === "function" ? hosts(session.remoteHosts) : hosts;
+          if (session.remoteHosts === nextHosts) {
+            return prev;
+          }
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: { ...session, remoteHosts: nextHosts },
             },
           };
         });

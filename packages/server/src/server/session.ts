@@ -177,6 +177,15 @@ import type { LocalSpeechModelId } from "./speech/providers/local/models.js";
 import { toResolver, type Resolvable } from "./speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from "./speech/speech-runtime.js";
 import type pino from "pino";
+import type { RemoteHostManager, RemoteHostStatusEntry } from "./remote/remote-host-manager.js";
+import {
+  createRemoteAgentProxy,
+  rewriteRemoteAgentId,
+  rewriteLocalAgentId,
+  isRemoteAgentId,
+  extractHostAliasFromAgentId,
+  type RemoteAgentProxy,
+} from "./remote/remote-agent-proxy.js";
 import { resolveClientMessageId } from "./client-message-id.js";
 import { ChatServiceError, FileBackedChatService } from "./chat/chat-service.js";
 import { notifyChatMentions } from "./chat/chat-mentions.js";
@@ -463,6 +472,8 @@ export type SessionOptions = {
   };
   agentProviderRuntimeSettings?: AgentProviderRuntimeSettingsMap;
   providerOverrides?: Record<string, ProviderOverride>;
+  remoteHostManager?: RemoteHostManager;
+  daemonVersion?: string;
 };
 
 export type SessionLifecycleIntent =
@@ -634,6 +645,10 @@ export class Session {
   private readonly providerOverrides: Record<string, ProviderOverride> | undefined;
   private voiceModeAgentId: string | null = null;
   private voiceModeBaseConfig: VoiceModeBaseConfig | null = null;
+  private readonly remoteHostManager: RemoteHostManager | null;
+  private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
+  private readonly remoteAgentProxies = new Map<string, RemoteAgentProxy>();
+  private readonly daemonVersion: string | null;
 
   constructor(options: SessionOptions) {
     const {
@@ -722,6 +737,8 @@ export class Session {
     this.getSpeechReadiness = dictation?.getSpeechReadiness;
     this.agentProviderRuntimeSettings = agentProviderRuntimeSettings;
     this.providerOverrides = providerOverrides;
+    this.remoteHostManager = options.remoteHostManager ?? null;
+    this.daemonVersion = options.daemonVersion ?? null;
     this.abortController = new AbortController();
     this.sessionLogger = logger.child({
       module: "session",
@@ -1880,6 +1897,22 @@ export class Session {
           case "loop/stop":
             await this.handleLoopStopRequest(msg);
             break;
+
+          case "add_remote_host_request":
+            await this.handleAddRemoteHost(msg);
+            break;
+          case "remove_remote_host_request":
+            await this.handleRemoveRemoteHost(msg);
+            break;
+          case "fetch_remote_hosts_request":
+            await this.handleFetchRemoteHosts(msg);
+            break;
+          case "retry_remote_host_request":
+            await this.handleRetryRemoteHost(msg);
+            break;
+          case "deploy_remote_host_request":
+            await this.handleDeployRemoteHost(msg);
+            break;
         }
       } catch (error: any) {
         const err = error instanceof Error ? error : new Error(String(error));
@@ -2013,6 +2046,11 @@ export class Session {
   }
 
   private async handleDeleteAgentRequest(agentId: string, requestId: string): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, { type: "delete_agent_request", agentId, requestId });
+      return;
+    }
+
     this.sessionLogger.info({ agentId }, `Deleting agent ${agentId} from registry`);
 
     const knownCwd =
@@ -2062,6 +2100,11 @@ export class Session {
   }
 
   private async handleArchiveAgentRequest(agentId: string, requestId: string): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, { type: "archive_agent_request", agentId, requestId });
+      return;
+    }
+
     const result = await this.archiveAgentForClose(agentId);
     this.emit({
       type: "agent_archived",
@@ -2733,6 +2776,12 @@ export class Session {
   private async handleCreateAgentRequest(
     msg: Extract<SessionInboundMessage, { type: "create_agent_request" }>,
   ): Promise<void> {
+    const hostAlias = msg.host;
+    if (hostAlias && this.remoteHostManager) {
+      await this.handleRemoteCreateAgent(hostAlias, msg);
+      return;
+    }
+
     const {
       config,
       worktreeName,
@@ -2980,6 +3029,11 @@ export class Session {
   }
 
   private async handleCancelAgentRequest(agentId: string, requestId?: string): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, { type: "cancel_agent_request", agentId, requestId });
+      return;
+    }
+
     this.sessionLogger.info({ agentId }, `Cancel request received for agent ${agentId}`);
 
     try {
@@ -3485,6 +3539,16 @@ export class Session {
     modeId: string,
     requestId: string,
   ): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, {
+        type: "set_agent_mode_request",
+        agentId,
+        modeId,
+        requestId,
+      });
+      return;
+    }
+
     this.sessionLogger.info({ agentId, modeId, requestId }, "session: set_agent_mode_request");
 
     try {
@@ -3528,6 +3592,16 @@ export class Session {
     modelId: string | null,
     requestId: string,
   ): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, {
+        type: "set_agent_model_request",
+        agentId,
+        modelId,
+        requestId,
+      });
+      return;
+    }
+
     this.sessionLogger.info({ agentId, modelId, requestId }, "session: set_agent_model_request");
 
     try {
@@ -3572,6 +3646,17 @@ export class Session {
     value: unknown,
     requestId: string,
   ): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, {
+        type: "set_agent_feature_request",
+        agentId,
+        featureId,
+        value,
+        requestId,
+      });
+      return;
+    }
+
     this.sessionLogger.info(
       { agentId, featureId, value, requestId },
       "session: set_agent_feature_request",
@@ -3618,6 +3703,16 @@ export class Session {
     thinkingOptionId: string | null,
     requestId: string,
   ): Promise<void> {
+    if (isRemoteAgentId(agentId)) {
+      this.forwardToRemoteAgent(agentId, {
+        type: "set_agent_thinking_request",
+        agentId,
+        thinkingOptionId,
+        requestId,
+      });
+      return;
+    }
+
     this.sessionLogger.info(
       { agentId, thinkingOptionId, requestId },
       "session: set_agent_thinking_request",
@@ -6181,6 +6276,15 @@ export class Session {
   }
 
   private async handleFetchAgent(agentIdOrIdentifier: string, requestId: string): Promise<void> {
+    if (isRemoteAgentId(agentIdOrIdentifier)) {
+      this.forwardToRemoteAgent(agentIdOrIdentifier, {
+        type: "fetch_agent_request",
+        agentId: agentIdOrIdentifier,
+        requestId,
+      });
+      return;
+    }
+
     const resolved = await this.resolveAgentIdentifier(agentIdOrIdentifier);
     if (!resolved.ok) {
       this.emit({
@@ -6214,6 +6318,11 @@ export class Session {
   private async handleFetchAgentTimelineRequest(
     msg: Extract<SessionInboundMessage, { type: "fetch_agent_timeline_request" }>,
   ): Promise<void> {
+    if (isRemoteAgentId(msg.agentId)) {
+      this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      return;
+    }
+
     const direction: AgentTimelineFetchDirection = msg.direction ?? (msg.cursor ? "after" : "tail");
     const projection: TimelineProjectionMode = msg.projection ?? "projected";
     const requestedLimit = msg.limit;
@@ -6372,6 +6481,11 @@ export class Session {
   private async handleSendAgentMessageRequest(
     msg: Extract<SessionInboundMessage, { type: "send_agent_message_request" }>,
   ): Promise<void> {
+    if (isRemoteAgentId(msg.agentId)) {
+      this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      return;
+    }
+
     const resolved = await this.resolveAgentIdentifier(msg.agentId);
     if (!resolved.ok) {
       this.emit({
@@ -6478,6 +6592,16 @@ export class Session {
     requestId: string,
     timeoutMs?: number,
   ): Promise<void> {
+    if (isRemoteAgentId(agentIdOrIdentifier)) {
+      this.forwardToRemoteAgent(agentIdOrIdentifier, {
+        type: "wait_for_finish_request",
+        agentId: agentIdOrIdentifier,
+        requestId,
+        ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+      });
+      return;
+    }
+
     const resolved = await this.resolveAgentIdentifier(agentIdOrIdentifier);
     if (!resolved.ok) {
       this.emit({
@@ -7161,6 +7285,120 @@ export class Session {
     }
   }
 
+  // ============================================================================
+  // Remote Agent Routing
+  // ============================================================================
+
+  private async handleRemoteCreateAgent(
+    hostAlias: string,
+    msg: Extract<SessionInboundMessage, { type: "create_agent_request" }>,
+  ): Promise<void> {
+    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
+    if (!tunnelPort) {
+      this.emit({
+        type: "status",
+        payload: {
+          status: "agent_create_failed",
+          requestId: msg.requestId,
+          error: `Remote host "${hostAlias}" is not connected`,
+        },
+      });
+      return;
+    }
+
+    try {
+      let proxy = this.remoteAgentProxies.get(hostAlias);
+      if (!proxy?.alive) {
+        proxy = await createRemoteAgentProxy({
+          hostAlias,
+          tunnelPort,
+          daemonVersion: this.daemonVersion ?? "0.0.0",
+          logger: this.sessionLogger,
+          onSessionMessage: (remoteMsg) => {
+            this.handleRemoteAgentResponse(hostAlias, remoteMsg);
+          },
+        });
+        this.remoteAgentProxies.set(hostAlias, proxy);
+      }
+
+      // Forward without host field
+      const { host, ...remoteMsg } = msg;
+      proxy.sendSessionMessage(remoteMsg);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "status",
+        payload: {
+          status: "agent_create_failed",
+          requestId: msg.requestId,
+          error: `Failed to connect to "${hostAlias}": ${message}`,
+        },
+      });
+    }
+  }
+
+  private handleRemoteAgentResponse(hostAlias: string, remoteMsg: Record<string, unknown>): void {
+    const payload = remoteMsg.payload as Record<string, unknown> | undefined;
+    this.sessionLogger.debug(
+      {
+        hostAlias,
+        remoteMsgType: remoteMsg.type,
+        payloadStatus: payload?.status,
+        payloadRequestId: payload?.requestId,
+      },
+      "Remote agent response received, forwarding to client",
+    );
+    const rewritten = this.rewriteAgentIdsInMessage(hostAlias, remoteMsg);
+    this.emit(rewritten as any);
+  }
+
+  private rewriteAgentIdsInMessage(
+    hostAlias: string,
+    msg: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const result = { ...msg };
+    if (typeof result.agentId === "string") {
+      result.agentId = rewriteRemoteAgentId(hostAlias, result.agentId);
+    }
+    if (result.payload && typeof result.payload === "object") {
+      const payload = { ...(result.payload as Record<string, unknown>) };
+      if (typeof payload.agentId === "string") {
+        payload.agentId = rewriteRemoteAgentId(hostAlias, payload.agentId);
+      }
+      if (payload.agent && typeof payload.agent === "object") {
+        const agent = { ...(payload.agent as Record<string, unknown>) };
+        if (typeof agent.id === "string") {
+          agent.id = rewriteRemoteAgentId(hostAlias, agent.id);
+        }
+        payload.agent = agent;
+      }
+      if (payload.final && typeof payload.final === "object") {
+        const final = { ...(payload.final as Record<string, unknown>) };
+        if (typeof final.id === "string") {
+          final.id = rewriteRemoteAgentId(hostAlias, final.id);
+        }
+        payload.final = final;
+      }
+      result.payload = payload;
+    }
+    return result;
+  }
+
+  private forwardToRemoteAgent(agentId: string, msg: Record<string, unknown>): void {
+    const hostAlias = extractHostAliasFromAgentId(agentId);
+    if (!hostAlias) return;
+    const proxy = this.remoteAgentProxies.get(hostAlias);
+    if (!proxy?.alive) {
+      this.sessionLogger.warn({ agentId, hostAlias }, "Remote proxy not available");
+      return;
+    }
+    const remoteMsg = { ...msg };
+    if (typeof remoteMsg.agentId === "string") {
+      remoteMsg.agentId = rewriteLocalAgentId(hostAlias, remoteMsg.agentId);
+    }
+    proxy.sendSessionMessage(remoteMsg);
+  }
+
   /**
    * Emit a message to the client
    */
@@ -7231,6 +7469,193 @@ export class Session {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Remote host management handlers
+  // ---------------------------------------------------------------------------
+
+  private async handleAddRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+    hostname: string;
+    user?: string;
+    port?: number;
+    identityFile?: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "add_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.addHost({
+        hostAlias: msg.hostAlias,
+        hostname: msg.hostname,
+        user: msg.user,
+        port: msg.port,
+        identityFile: msg.identityFile,
+      });
+      this.emit({
+        type: "add_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "add_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleRemoveRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.removeHost(msg.hostAlias);
+
+      // Clean up mirrored projects/workspaces
+      const prefix = `ssh:${msg.hostAlias}:`;
+      const allProjects = await this.projectRegistry.list();
+      for (const p of allProjects) {
+        if (p.projectId.startsWith(prefix)) {
+          await this.projectRegistry.remove(p.projectId);
+        }
+      }
+      const allWorkspaces = await this.workspaceRegistry.list();
+      for (const w of allWorkspaces) {
+        if (w.workspaceId.startsWith(prefix)) {
+          await this.workspaceRegistry.remove(w.workspaceId);
+        }
+      }
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "remove_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleFetchRemoteHosts(msg: { requestId: string }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "fetch_remote_hosts_response",
+        payload: { requestId: msg.requestId, hosts: [] },
+      });
+      return;
+    }
+    const hosts = this.remoteHostManager.listStatuses();
+    this.emit({
+      type: "fetch_remote_hosts_response",
+      payload: { requestId: msg.requestId, hosts },
+    });
+
+    // Opt-in to status updates for this session
+    if (!this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostStatusListener = (status) => {
+        this.emit({
+          type: "remote_host_update",
+          payload: { host: status },
+        });
+      };
+      this.remoteHostManager.on("status_update", this.remoteHostStatusListener);
+    }
+  }
+
+  private async handleRetryRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.retryHost(msg.hostAlias);
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "retry_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
+  private async handleDeployRemoteHost(msg: {
+    requestId: string;
+    hostAlias: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+    try {
+      await this.remoteHostManager.triggerConnect(msg.hostAlias);
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      this.emit({
+        type: "deploy_remote_host_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
+
   /**
    * Clean up session resources
    */
@@ -7298,6 +7723,16 @@ export class Session {
       unsubscribe();
     }
     this.workspaceGitSubscriptions.clear();
+
+    if (this.remoteHostStatusListener && this.remoteHostManager) {
+      this.remoteHostManager.removeListener("status_update", this.remoteHostStatusListener);
+      this.remoteHostStatusListener = null;
+    }
+
+    for (const [, proxy] of this.remoteAgentProxies) {
+      proxy.close();
+    }
+    this.remoteAgentProxies.clear();
   }
 
   // ============================================================================

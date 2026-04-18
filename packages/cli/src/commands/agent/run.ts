@@ -58,7 +58,8 @@ export function addRunOptions(cmd: Command): Command {
     .option(
       "--output-schema <schema>",
       "Output JSON matching the provided schema file path or inline JSON schema",
-    );
+    )
+    .option("--ssh-host <alias>", "Run the agent on a remote SSH host");
 }
 
 /** Result type for agent run command */
@@ -97,6 +98,7 @@ export interface AgentRunOptions extends CommandOptions {
   label?: string[];
   waitTimeout?: string;
   outputSchema?: string;
+  sshHost?: string;
 }
 
 function toRunResult(
@@ -375,6 +377,7 @@ export async function runRunCommand(
             git,
             worktreeName: options.worktree,
             labels: Object.keys(labels).length > 0 ? labels : undefined,
+            host: options.sshHost,
           });
         } else {
           await client.sendMessage(structuredAgent.id, structuredPrompt);
@@ -473,6 +476,7 @@ export async function runRunCommand(
       git,
       worktreeName: options.worktree,
       labels: Object.keys(labels).length > 0 ? labels : undefined,
+      host: options.sshHost,
     });
 
     // Default run behavior is foreground: wait for completion unless --detach is set.
