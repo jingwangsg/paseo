@@ -104,8 +104,6 @@ const ACP_CLIENT_CAPABILITIES: ACPClientCapabilities = {
   terminal: true,
 };
 
-const COPILOT_AUTOPILOT_MODE = "https://agentclientprotocol.com/protocol/session-modes#autopilot";
-
 type ACPAgentClientOptions = {
   provider: string;
   logger: Logger;
@@ -2053,8 +2051,11 @@ function mapPermissionRequest(
   };
 }
 
-function shouldAutoApprovePermissionRequest(provider: string, currentMode: string | null): boolean {
-  return provider === "copilot" && currentMode === COPILOT_AUTOPILOT_MODE;
+function shouldAutoApprovePermissionRequest(
+  _provider: string,
+  _currentMode: string | null,
+): boolean {
+  return false;
 }
 
 function selectPermissionOption(
