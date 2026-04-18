@@ -769,7 +769,7 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     id: "agent-mode-cycle-shift-tab",
     action: "agent.mode.cycle",
     combo: "Shift+Tab",
-    when: { hasSelectedAgent: true, commandCenter: false },
+    when: { commandCenter: false },
     help: {
       id: "cycle-mode",
       section: "agent-input",
