@@ -2,6 +2,7 @@ import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 import { memo, useEffect, useRef, type ReactNode } from "react";
 import { Plus, Settings } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { AgentProviderBadge } from "@/components/agent-provider-badge";
 import { useCommandCenter } from "@/hooks/use-command-center";
 import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
 import { formatTimeAgo } from "@/utils/time";
@@ -222,12 +223,19 @@ export function CommandCenter() {
                                 />
                               </View>
                               <View style={styles.textContent}>
-                                <Text
-                                  style={[styles.title, { color: theme.colors.foreground }]}
-                                  numberOfLines={1}
-                                >
-                                  {agent.title || "New agent"}
-                                </Text>
+                                <View style={styles.titleRow}>
+                                  <Text
+                                    style={[styles.title, { color: theme.colors.foreground }]}
+                                    numberOfLines={1}
+                                  >
+                                    {agent.title || "New agent"}
+                                  </Text>
+                                  <AgentProviderBadge
+                                    provider={agent.provider}
+                                    serverId={agent.serverId}
+                                    size="compact"
+                                  />
+                                </View>
                                 <Text
                                   style={[styles.subtitle, { color: theme.colors.foregroundMuted }]}
                                   numberOfLines={1}
@@ -326,11 +334,18 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     gap: 2,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    minWidth: 0,
+  },
   rowShortcut: {
     marginLeft: theme.spacing[2],
     flexShrink: 0,
   },
   title: {
+    flexShrink: 1,
     fontSize: theme.fontSize.base,
     fontWeight: "400",
     lineHeight: 20,

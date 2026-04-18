@@ -13,6 +13,10 @@ export interface PanelDescriptor {
   titleState: "ready" | "loading";
   icon: ComponentType<PanelIconProps>;
   statusBucket: SidebarStateBucket | null;
+  providerBadge?: {
+    provider: string;
+    label: string;
+  } | null;
 }
 
 export interface PanelDescriptorContext {

@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { router } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { AgentProviderBadge } from "@/components/agent-provider-badge";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { formatTimeAgo } from "@/utils/time";
 import { shortenPath } from "@/utils/shorten-path";
@@ -152,6 +153,7 @@ function SessionRow({
           >
             {agent.title || "New session"}
           </Text>
+          <AgentProviderBadge provider={agent.provider} serverId={agent.serverId} size="compact" />
           {agent.archivedAt ? (
             <SessionBadge
               label="Archived"

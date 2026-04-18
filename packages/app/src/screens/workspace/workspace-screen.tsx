@@ -81,6 +81,7 @@ import {
   WorkspaceTabIcon,
   WorkspaceTabOptionRow,
 } from "@/screens/workspace/workspace-tab-presentation";
+import { AgentProviderBadge } from "@/components/agent-provider-badge";
 import {
   WorkspaceDesktopTabsRow,
   type WorkspaceDesktopTabRowItem,
@@ -240,9 +241,19 @@ function ResolvedMobileActiveTabTrigger({
             <WorkspaceTabIcon presentation={presentation} active />
           </View>
 
-          <Text style={styles.switcherTriggerText} numberOfLines={1}>
-            {presentation.titleState === "loading" ? "Loading..." : presentation.label}
-          </Text>
+          <View style={styles.switcherTriggerContent}>
+            <Text style={styles.switcherTriggerText} numberOfLines={1}>
+              {presentation.titleState === "loading" ? "Loading..." : presentation.label}
+            </Text>
+            {presentation.providerBadge ? (
+              <AgentProviderBadge
+                provider={presentation.providerBadge.provider}
+                label={presentation.providerBadge.label}
+                serverId={normalizedServerId}
+                size="compact"
+              />
+            ) : null}
+          </View>
         </>
       )}
     </WorkspaceTabPresentationResolver>
@@ -326,6 +337,7 @@ function MobileWorkspaceTabOption({
       {(presentation) => (
         <WorkspaceTabOptionRow
           presentation={presentation}
+          serverId={normalizedServerId}
           selected={selected}
           active={active}
           onPress={onPress}
@@ -2480,6 +2492,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   switcherTriggerIcon: {
     flexShrink: 0,
+  },
+  switcherTriggerContent: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
   },
   switcherTriggerText: {
     minWidth: 0,

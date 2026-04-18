@@ -2,6 +2,7 @@ import { useMemo, type ReactElement, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Check } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { AgentProviderBadge } from "@/components/agent-provider-badge";
 import invariant from "tiny-invariant";
 import { SyncedLoader } from "@/components/synced-loader";
 import { ensurePanelsRegistered } from "@/panels/register-panels";
@@ -10,6 +11,7 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { getStatusDotColor, isEmphasizedStatusDotBucket } from "@/utils/status-dot-color";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
+import { createWorkspaceTabPresentation } from "./workspace-tab-presentation.utils";
 
 export interface WorkspaceTabPresentation {
   key: string;
@@ -19,6 +21,10 @@ export interface WorkspaceTabPresentation {
   titleState: "ready" | "loading";
   icon: React.ComponentType<{ size: number; color: string }>;
   statusBucket: SidebarStateBucket | null;
+  providerBadge: {
+    provider: string;
+    label: string;
+  } | null;
 }
 
 const DEFAULT_STATUS_DOT_SIZE = 7;
@@ -73,24 +79,8 @@ function WorkspaceTabPresentationResolverInner({
   });
 
   const presentation = useMemo(
-    () => ({
-      key: tab.key,
-      kind: tab.kind,
-      label: descriptor.label,
-      subtitle: descriptor.subtitle,
-      titleState: descriptor.titleState,
-      icon: descriptor.icon,
-      statusBucket: descriptor.statusBucket,
-    }),
-    [
-      descriptor.icon,
-      descriptor.label,
-      descriptor.statusBucket,
-      descriptor.subtitle,
-      descriptor.titleState,
-      tab.key,
-      tab.kind,
-    ],
+    () => createWorkspaceTabPresentation({ tab, descriptor }),
+    [descriptor, tab],
   );
 
   return <>{children(presentation)}</>;
@@ -170,6 +160,7 @@ export function WorkspaceTabIcon({
 
 type WorkspaceTabOptionRowProps = {
   presentation: WorkspaceTabPresentation;
+  serverId: string;
   selected: boolean;
   active: boolean;
   onPress: () => void;
@@ -178,6 +169,7 @@ type WorkspaceTabOptionRowProps = {
 
 export function WorkspaceTabOptionRow({
   presentation,
+  serverId,
   selected,
   active,
   onPress,
@@ -197,9 +189,19 @@ export function WorkspaceTabOptionRow({
           <WorkspaceTabIcon presentation={presentation} active={selected || active} />
         </View>
         <View style={styles.optionContent}>
-          <Text numberOfLines={1} style={styles.optionLabel}>
-            {presentation.titleState === "loading" ? "Loading..." : presentation.label}
-          </Text>
+          <View style={styles.optionLabelRow}>
+            <Text numberOfLines={1} style={styles.optionLabel}>
+              {presentation.titleState === "loading" ? "Loading..." : presentation.label}
+            </Text>
+            {presentation.providerBadge ? (
+              <AgentProviderBadge
+                provider={presentation.providerBadge.provider}
+                label={presentation.providerBadge.label}
+                serverId={serverId}
+                size="compact"
+              />
+            ) : null}
+          </View>
         </View>
       </Pressable>
       {selected ? (
@@ -261,9 +263,16 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     flexShrink: 1,
   },
+  optionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    minWidth: 0,
+  },
   optionLabel: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
+    flexShrink: 1,
   },
   optionTrailingSlot: {
     width: 16,

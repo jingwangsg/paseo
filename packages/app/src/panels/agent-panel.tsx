@@ -13,6 +13,7 @@ import { FileDropZone } from "@/components/file-drop-zone";
 import type { ImageAttachment } from "@/components/message-input";
 import { getProviderIcon } from "@/components/provider-icons";
 import { ToastViewport, useToastHost } from "@/components/toast-host";
+import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useAgentAttentionClear } from "@/hooks/use-agent-attention-clear";
 import { useAgentInitialization } from "@/hooks/use-agent-initialization";
 import {
@@ -36,6 +37,7 @@ import {
 } from "@/runtime/host-runtime";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
 import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import { buildAgentProviderBadge } from "@/utils/agent-provider-display";
 import { mergePendingCreateImages } from "@/utils/pending-create-images";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -48,17 +50,6 @@ import {
   deriveRouteBottomAnchorRequest,
 } from "@/screens/agent/agent-ready-screen-bottom-anchor";
 import { isNative } from "@/constants/platform";
-
-function formatProviderLabel(provider: Agent["provider"]): string {
-  if (!provider) {
-    return "Agent";
-  }
-  return provider
-    .split(/[-_\s]+/)
-    .filter((part) => part.length > 0)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
 
 function resolveWorkspaceAgentTabLabel(title: string | null | undefined): string | null {
   if (typeof title !== "string") {
@@ -91,15 +82,21 @@ function useAgentPanelDescriptor(
       };
     }),
   );
+  const { entries: providerSnapshotEntries } = useProvidersSnapshot(context.serverId);
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
   const icon = getProviderIcon(provider) ?? Bot;
+  const providerBadge = useMemo(
+    () => buildAgentProviderBadge({ provider, snapshotEntries: providerSnapshotEntries }),
+    [provider, providerSnapshotEntries],
+  );
 
   return {
     label: label ?? "",
-    subtitle: `${formatProviderLabel(provider)} agent`,
+    subtitle: `${providerBadge?.label ?? "Agent"} agent`,
     titleState: label ? "ready" : "loading",
     icon,
+    providerBadge,
     statusBucket: descriptorState.status
       ? deriveSidebarStateBucket({
           status: descriptorState.status,
