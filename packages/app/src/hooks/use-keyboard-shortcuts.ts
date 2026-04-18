@@ -28,7 +28,7 @@ import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { useKeyboardShortcutOverrides } from "@/hooks/use-keyboard-shortcut-overrides";
 import { isNative } from "@/constants/platform";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
-import { cycleAgentMode } from "@/keyboard/cycle-agent-mode";
+import { runCycleAgentModeShortcut } from "@/keyboard/cycle-agent-mode";
 
 export function useKeyboardShortcuts({
   enabled,
@@ -288,8 +288,6 @@ export function useKeyboardShortcuts({
             cycleTheme();
           }
           return true;
-        case "agent.mode.cycle":
-          return cycleAgentMode({ selectedAgentId, activeServerId });
         case "command-center.toggle": {
           const store = useKeyboardShortcutsStore.getState();
           if (!store.commandCenterOpen) {
@@ -388,6 +386,22 @@ export function useKeyboardShortcuts({
       }
 
       if (!result.match) {
+        return;
+      }
+
+      if (result.match.action === "agent.mode.cycle") {
+        const modeCycleResult = runCycleAgentModeShortcut({
+          selectedAgentId,
+          activeServerId,
+        });
+        if (modeCycleResult.shouldConsume) {
+          if (result.match.preventDefault) {
+            event.preventDefault();
+          }
+          if (result.match.stopPropagation) {
+            event.stopPropagation();
+          }
+        }
         return;
       }
 

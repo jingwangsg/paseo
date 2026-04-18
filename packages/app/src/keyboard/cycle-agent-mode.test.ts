@@ -7,7 +7,9 @@ vi.mock("@/stores/session-store", () => ({
   useSessionStore: { getState: () => mockGetState() },
 }));
 
-import { cycleAgentMode } from "./cycle-agent-mode";
+import * as cycleAgentModeModule from "./cycle-agent-mode";
+
+const { cycleAgentMode, runCycleAgentModeShortcut } = cycleAgentModeModule;
 
 function makeAgent(overrides: {
   currentModeId?: string | null;
@@ -23,10 +25,12 @@ function makeAgent(overrides: {
 function makeSession(overrides: {
   agents?: Map<string, ReturnType<typeof makeAgent>>;
   client?: { setAgentMode: ReturnType<typeof vi.fn> } | null;
+  focusedAgentId?: string | null;
 }) {
   return {
     agents: overrides.agents ?? new Map(),
     client: overrides.client ?? null,
+    focusedAgentId: overrides.focusedAgentId ?? null,
   } as unknown as SessionState;
 }
 
@@ -88,6 +92,31 @@ describe("cycleAgentMode", () => {
     expect(setAgentMode).toHaveBeenCalledWith("agent1", "mode-b");
   });
 
+  it("falls back to the workspace focused agent when selectedAgentId is unavailable", () => {
+    const agent = makeAgent({
+      currentModeId: "mode-a",
+      availableModes: [
+        { id: "mode-a", label: "A" },
+        { id: "mode-b", label: "B" },
+      ],
+    });
+    const setAgentMode = vi.fn().mockResolvedValue(undefined);
+    const session = makeSession({
+      agents: new Map([["agent1", agent]]),
+      client: { setAgentMode },
+      focusedAgentId: "agent1",
+    });
+    mockGetState.mockReturnValue({ sessions: { server1: session } });
+
+    const result = cycleAgentMode({
+      selectedAgentId: undefined,
+      activeServerId: "server1",
+    });
+
+    expect(result).toBe(true);
+    expect(setAgentMode).toHaveBeenCalledWith("agent1", "mode-b");
+  });
+
   it("wraps around to the first mode after the last", () => {
     const agent = makeAgent({
       currentModeId: "mode-c",
@@ -129,5 +158,16 @@ describe("cycleAgentMode", () => {
     expect(cycleAgentMode({ selectedAgentId: "server1:agent1", activeServerId: "server1" })).toBe(
       false,
     );
+  });
+
+  it("reserves the Shift+Tab shortcut even when there is no active agent to cycle", () => {
+    mockGetState.mockReturnValue({ sessions: {} });
+
+    const result = runCycleAgentModeShortcut({
+      selectedAgentId: undefined,
+      activeServerId: "server1",
+    });
+
+    expect(result).toEqual({ didCycle: false, shouldConsume: true });
   });
 });
