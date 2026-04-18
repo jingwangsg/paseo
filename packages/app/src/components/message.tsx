@@ -85,6 +85,7 @@ export type { InlinePathTarget } from "@/utils/inline-path";
 import { PlanCard } from "./plan-card";
 import { useToolCallSheet } from "./tool-call-sheet";
 import { ToolCallDetailsContent } from "./tool-call-details";
+import { MarkdownCollapsible } from "./markdown-collapsible";
 import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
 import type { DaemonClient } from "@server/client/daemon-client";
 import { isWeb, isNative } from "@/constants/platform";
@@ -680,6 +681,17 @@ function MarkdownLink({
   );
 }
 
+function parseDetailsBlock(html: string): { summary: string; content: string } | null {
+  const detailsMatch = html.match(
+    /<details[^>]*>\s*<summary[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/i,
+  );
+  if (!detailsMatch) return null;
+  return {
+    summary: detailsMatch[1].trim(),
+    content: detailsMatch[2].trim(),
+  };
+}
+
 function getInlineCodeAutoLinkUrl(
   markdownParser: ReturnType<typeof MarkdownIt>,
   content: string,
@@ -994,7 +1006,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   const markdownStyles = useMemo(() => createMarkdownStyles(theme), [rt.themeName]);
 
   const markdownParser = useMemo(() => {
-    const parser = MarkdownIt({ typographer: true, linkify: true });
+    const parser = MarkdownIt({ typographer: true, linkify: true, html: true });
     parser.use(taskLists, { enabled: true });
     const defaultValidateLink = parser.validateLink.bind(parser);
     parser.validateLink = (url: string) => {
@@ -1283,8 +1295,41 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         );
       },
+      html_block: (node: any, _children: ReactNode[], _parent: any, styles: any) => {
+        const content = node.content ?? "";
+        const details = parseDetailsBlock(content);
+        if (details) {
+          return (
+            <MarkdownCollapsible key={node.key} summary={details.summary} theme={theme}>
+              <MemoizedMarkdownBlock
+                text={details.content}
+                styles={markdownStyles}
+                rules={markdownRules}
+                parser={markdownParser}
+                onLinkPress={handleLinkPress}
+              />
+            </MarkdownCollapsible>
+          );
+        }
+
+        // For other HTML blocks, render as plain text (safe default)
+        return (
+          <Text key={node.key} style={styles.text}>
+            {content}
+          </Text>
+        );
+      },
     };
-  }, [client, handleLinkPress, markdownParser, onInlinePathPress, serverId, workspaceRoot]);
+  }, [
+    client,
+    handleLinkPress,
+    markdownParser,
+    markdownStyles,
+    onInlinePathPress,
+    serverId,
+    theme,
+    workspaceRoot,
+  ]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(message), [message]);
 
