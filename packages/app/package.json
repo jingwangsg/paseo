@@ -80,6 +80,7 @@
     "expo-updates": "~29.0.12",
     "expo-web-browser": "~15.0.8",
     "lucide-react-native": "^0.546.0",
+    "markdown-it-task-lists": "^2.1.1",
     "mnemonic-id": "^3.2.7",
     "react": "19.1.4",
     "react-dom": "19.1.4",

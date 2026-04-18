@@ -272,6 +272,23 @@ export function createMarkdownStyles(theme: Theme) {
       flexShrink: 1,
     },
 
+    task_list_item_checkbox: {
+      width: 18,
+      height: 18,
+      borderRadius: theme.borderRadius.base,
+      borderWidth: 2,
+      borderColor: theme.colors.foregroundMuted,
+      marginRight: theme.spacing[2],
+      marginTop: 2,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+
+    task_list_item_checkbox_checked: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+
     bullet_list_content: {
       flex: 1,
       flexShrink: 1,

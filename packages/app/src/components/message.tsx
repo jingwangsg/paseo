@@ -72,6 +72,7 @@ import {
   type InlinePathTarget,
 } from "@/utils/inline-path";
 import { getMarkdownListMarker } from "@/utils/markdown-list";
+import taskLists from "markdown-it-task-lists";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { markScrollInvestigationEvent } from "@/utils/scroll-jank-investigation";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
@@ -720,6 +721,17 @@ function nodeHasParentType(parent: unknown, type: string): boolean {
 
 const BLOCKQUOTE_BORDER_COLORS = ["primary", "accent", "foregroundMuted"] as const;
 
+function getFirstTextContent(node: any): string | null {
+  if (typeof node.content === "string") return node.content;
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) {
+      const result = getFirstTextContent(child);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
 function getBlockquoteDepth(parent: any): number {
   if (!Array.isArray(parent)) return 0;
   let depth = 0;
@@ -983,6 +995,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   const markdownParser = useMemo(() => {
     const parser = MarkdownIt({ typographer: true, linkify: true });
+    parser.use(taskLists, { enabled: true });
     const defaultValidateLink = parser.validateLink.bind(parser);
     parser.validateLink = (url: string) => {
       if (url.trim().toLowerCase().startsWith("file://")) {
@@ -1114,6 +1127,34 @@ export const AssistantMessage = memo(function AssistantMessage({
         </View>
       ),
       list_item: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        // Detect task list items (from markdown-it-task-lists plugin)
+        const isTaskItem =
+          node.attributes?.class === "task-list-item" ||
+          (typeof node.sourceInfo === "string" && /^\[[ x]\]/.test(node.sourceInfo));
+
+        if (isTaskItem) {
+          const firstChildContent = getFirstTextContent(node);
+          const isChecked =
+            firstChildContent?.includes("[x]") ||
+            node.attributes?.checked === true ||
+            node.attributes?.checked === "true";
+
+          return (
+            <View key={node.key} style={styles.list_item}>
+              <View
+                style={[
+                  styles.task_list_item_checkbox,
+                  isChecked && styles.task_list_item_checkbox_checked,
+                ]}
+              >
+                {isChecked && <Check size={12} color={theme.colors.background} strokeWidth={3} />}
+              </View>
+              <View style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>{children}</View>
+            </View>
+          );
+        }
+
+        // Normal list item
         const { isOrdered, marker } = getMarkdownListMarker(node, parent);
         const iconStyle = isOrdered ? styles.ordered_list_icon : styles.bullet_list_icon;
         const contentStyle = isOrdered ? styles.ordered_list_content : styles.bullet_list_content;
