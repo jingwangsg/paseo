@@ -40,8 +40,9 @@ export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
 
 export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
   try {
+    // Verify both PID liveness AND process name to avoid false positives from PID reuse
     const result = await ssh.exec(
-      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null`,
+      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon`,
     );
     return result.exitCode === 0;
   } catch {
