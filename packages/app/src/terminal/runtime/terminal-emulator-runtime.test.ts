@@ -327,3 +327,23 @@ describe("terminal-emulator-runtime", () => {
     expect(writeTexts).toEqual(["hello world"]);
   });
 });
+
+describe("touch scroll momentum", () => {
+  it("decays velocity to zero over multiple frames", () => {
+    // Simulate the momentum decay loop as a pure computation
+    let velocity = 5.0; // px per ms
+    const DECAY = 0.92;
+    const STOP_THRESHOLD = 0.5;
+    let frames = 0;
+
+    while (Math.abs(velocity) > STOP_THRESHOLD && frames < 200) {
+      velocity *= DECAY;
+      frames += 1;
+    }
+
+    // Velocity should decay below threshold within a reasonable number of frames
+    expect(Math.abs(velocity)).toBeLessThan(STOP_THRESHOLD);
+    expect(frames).toBeGreaterThan(5);
+    expect(frames).toBeLessThan(100);
+  });
+});

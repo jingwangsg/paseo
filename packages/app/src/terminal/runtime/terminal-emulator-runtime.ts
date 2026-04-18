@@ -77,6 +77,9 @@ const isMac =
     /Mac/i.test((navigator as any).platform ?? ""));
 
 const DEFAULT_TOUCH_SCROLL_LINE_HEIGHT_PX = 18;
+const TOUCH_MOMENTUM_DECAY = 0.92;
+const TOUCH_MOMENTUM_STOP_THRESHOLD_PX = 0.5;
+const TOUCH_MOMENTUM_FRAME_MS = 16;
 const FIT_TIMEOUT_DELAYS_MS = [0, 16, 48, 120, 250, 500, 1_000, 2_000];
 const OUTPUT_OPERATION_TIMEOUT_MS = 5_000;
 const OUTPUT_FRAME_BUDGET_BYTES = 64 * 1024;
@@ -844,6 +847,10 @@ export class TerminalEmulatorRuntime {
     const touchScrollLineHeightPx =
       measuredLineHeight > 0 ? measuredLineHeight : DEFAULT_TOUCH_SCROLL_LINE_HEIGHT_PX;
 
+    let velocityPxPerMs = 0;
+    let lastTouchTimestamp = 0;
+    let momentumRaf: number | null = null;
+
     const activeTouch = {
       identifier: -1,
       startX: 0,
@@ -853,7 +860,48 @@ export class TerminalEmulatorRuntime {
       mode: null as "vertical" | "horizontal" | null,
     };
 
+    const cancelMomentum = () => {
+      if (momentumRaf !== null) {
+        cancelAnimationFrame(momentumRaf);
+        momentumRaf = null;
+      }
+      velocityPxPerMs = 0;
+    };
+
+    const applyScrollDelta = (deltaPx: number) => {
+      touchScrollRemainderPx += deltaPx;
+      const lineDelta = Math.trunc(touchScrollRemainderPx / touchScrollLineHeightPx);
+      if (lineDelta !== 0) {
+        input.terminal.scrollLines(-lineDelta);
+        touchScrollRemainderPx -= lineDelta * touchScrollLineHeightPx;
+      }
+    };
+
+    const startMomentum = () => {
+      if (Math.abs(velocityPxPerMs) < TOUCH_MOMENTUM_STOP_THRESHOLD_PX / TOUCH_MOMENTUM_FRAME_MS) {
+        velocityPxPerMs = 0;
+        return;
+      }
+
+      const step = () => {
+        velocityPxPerMs *= TOUCH_MOMENTUM_DECAY;
+        if (
+          Math.abs(velocityPxPerMs) <
+          TOUCH_MOMENTUM_STOP_THRESHOLD_PX / TOUCH_MOMENTUM_FRAME_MS
+        ) {
+          momentumRaf = null;
+          velocityPxPerMs = 0;
+          return;
+        }
+        applyScrollDelta(velocityPxPerMs * TOUCH_MOMENTUM_FRAME_MS);
+        momentumRaf = requestAnimationFrame(step);
+      };
+      momentumRaf = requestAnimationFrame(step);
+    };
+
     const touchStartHandler = (event: TouchEvent) => {
+      cancelMomentum();
+
       if (event.touches.length !== 1) {
         touchScrollRemainderPx = 0;
         activeTouch.identifier = -1;
@@ -876,6 +924,7 @@ export class TerminalEmulatorRuntime {
       activeTouch.lastY = touch.clientY;
       activeTouch.mode = null;
       touchScrollRemainderPx = 0;
+      lastTouchTimestamp = performance.now();
     };
 
     const touchMoveHandler = (event: TouchEvent) => {
@@ -908,12 +957,12 @@ export class TerminalEmulatorRuntime {
         return;
       }
 
-      touchScrollRemainderPx += deltaY;
-      const lineDelta = Math.trunc(touchScrollRemainderPx / touchScrollLineHeightPx);
-      if (lineDelta !== 0) {
-        input.terminal.scrollLines(-lineDelta);
-        touchScrollRemainderPx -= lineDelta * touchScrollLineHeightPx;
-      }
+      const now = performance.now();
+      const elapsed = Math.max(1, now - lastTouchTimestamp);
+      velocityPxPerMs = deltaY / elapsed;
+      lastTouchTimestamp = now;
+
+      applyScrollDelta(deltaY);
 
       event.preventDefault();
     };
@@ -923,13 +972,14 @@ export class TerminalEmulatorRuntime {
         (touch) => touch.identifier === activeTouch.identifier,
       );
       if (activeTouchEnded || event.touches.length === 0) {
-        touchScrollRemainderPx = 0;
         activeTouch.identifier = -1;
         activeTouch.mode = null;
+        startMomentum();
       }
     };
 
     const touchCancelHandler = () => {
+      cancelMomentum();
       touchScrollRemainderPx = 0;
       activeTouch.identifier = -1;
       activeTouch.mode = null;
@@ -941,6 +991,7 @@ export class TerminalEmulatorRuntime {
     input.root.addEventListener("touchcancel", touchCancelHandler, { passive: true });
 
     return () => {
+      cancelMomentum();
       input.root.removeEventListener("touchstart", touchStartHandler);
       input.root.removeEventListener("touchmove", touchMoveHandler);
       input.root.removeEventListener("touchend", touchEndHandler);
