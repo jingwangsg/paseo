@@ -1116,6 +1116,26 @@ export const AssistantMessage = memo(function AssistantMessage({
           {children}
         </View>
       ),
+      hr: (node: any) => (
+        <View
+          key={node.key}
+          style={{
+            marginVertical: theme.spacing[6],
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: theme.colors.foregroundMuted,
+              fontSize: theme.fontSize.base,
+              letterSpacing: 8,
+            }}
+          >
+            ···
+          </Text>
+        </View>
+      ),
       link: (node: any, children: ReactNode[], _parent: any, styles: any) => (
         <MarkdownLink
           key={node.key}

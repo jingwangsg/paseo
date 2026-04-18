@@ -83,4 +83,13 @@ describe("createMarkdownStyles", () => {
       borderWidth: 1,
     });
   });
+
+  it("hr has centered text alignment and transparent background", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.hr).toMatchObject({
+      marginVertical: darkTheme.spacing[6],
+    });
+    expect((styles.hr as any).backgroundColor).toBeUndefined();
+    expect((styles.hr as any).height).toBeUndefined();
+  });
 });
