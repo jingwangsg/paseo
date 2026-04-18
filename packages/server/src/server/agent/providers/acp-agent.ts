@@ -104,8 +104,6 @@ const ACP_CLIENT_CAPABILITIES: ACPClientCapabilities = {
   terminal: true,
 };
 
-const COPILOT_AUTOPILOT_MODE = "https://agentclientprotocol.com/protocol/session-modes#autopilot";
-
 type ACPAgentClientOptions = {
   provider: string;
   logger: Logger;
@@ -1156,18 +1154,6 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-    if (shouldAutoApprovePermissionRequest(this.provider, this.currentMode)) {
-      const selectedOption = selectPermissionOption(params.options, { behavior: "allow" });
-      return selectedOption
-        ? {
-            outcome: {
-              outcome: "selected",
-              optionId: selectedOption.optionId,
-            },
-          }
-        : { outcome: { outcome: "cancelled" } };
-    }
-
     const requestId = randomUUID();
     let toolSnapshot =
       this.toolCalls.get(params.toolCall.toolCallId) ??
@@ -2051,10 +2037,6 @@ function mapPermissionRequest(
       options: params.options,
     },
   };
-}
-
-function shouldAutoApprovePermissionRequest(provider: string, currentMode: string | null): boolean {
-  return provider === "copilot" && currentMode === COPILOT_AUTOPILOT_MODE;
 }
 
 function selectPermissionOption(

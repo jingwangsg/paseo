@@ -45,6 +45,7 @@ export type KeyboardActionId =
   | "worktree.archive"
   | "view.toggle.focus"
   | "theme.cycle"
+  | "agent.mode.cycle"
   | "message-input.action";
 
 export type KeyboardShortcutPayload =

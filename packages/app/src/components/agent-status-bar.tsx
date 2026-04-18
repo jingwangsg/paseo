@@ -483,7 +483,7 @@ function ControlledStatusBar({
                     disabled={disabled || !canSelectMode}
                     onPress={() => handleSelectorPress("mode")}
                     style={({ pressed, hovered }) => [
-                      styles.modeIconBadge,
+                      styles.modeBadge,
                       hovered && styles.modeBadgeHovered,
                       (pressed || openSelector === "mode") && styles.modeBadgePressed,
                       (disabled || !canSelectMode) && styles.disabledBadge,
@@ -497,6 +497,8 @@ function ControlledStatusBar({
                     ) : (
                       <ShieldCheck size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
                     )}
+                    <Text style={styles.modeBadgeText}>{displayMode}</Text>
+                    <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
                   </Pressable>
                 </TooltipTrigger>
                 <TooltipContent side="top" align="center" offset={8}>

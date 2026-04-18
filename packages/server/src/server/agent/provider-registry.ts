@@ -22,10 +22,7 @@ import type {
 } from "./provider-launch-config.js";
 import { ClaudeAgentClient } from "./providers/claude-agent.js";
 import { CodexAppServerAgentClient } from "./providers/codex-app-server-agent.js";
-import { CopilotACPAgentClient } from "./providers/copilot-acp-agent.js";
 import { GenericACPAgentClient } from "./providers/generic-acp-agent.js";
-import { OpenCodeAgentClient, OpenCodeServerManager } from "./providers/opencode-agent.js";
-import { PiACPAgentClient } from "./providers/pi-acp-agent.js";
 import {
   AGENT_PROVIDER_DEFINITIONS,
   BUILTIN_PROVIDER_IDS,
@@ -68,17 +65,6 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
       runtimeSettings,
     }),
   codex: (logger, runtimeSettings) => new CodexAppServerAgentClient(logger, runtimeSettings),
-  copilot: (logger, runtimeSettings) =>
-    new CopilotACPAgentClient({
-      logger,
-      runtimeSettings,
-    }),
-  opencode: (logger, runtimeSettings) => new OpenCodeAgentClient(logger, runtimeSettings),
-  pi: (logger, runtimeSettings) =>
-    new PiACPAgentClient({
-      logger,
-      runtimeSettings,
-    }),
 };
 
 function getProviderClientFactory(provider: string): ProviderClientFactory {
@@ -471,8 +457,8 @@ export function createAllClients(
 }
 
 export async function shutdownProviders(
-  logger: Logger,
-  options?: BuildProviderRegistryOptions,
+  _logger: Logger,
+  _options?: BuildProviderRegistryOptions,
 ): Promise<void> {
-  await OpenCodeServerManager.getInstance(logger, options?.runtimeSettings?.opencode).shutdown();
+  // No provider-specific shutdown needed
 }

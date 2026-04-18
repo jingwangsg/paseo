@@ -764,6 +764,20 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
 
+  // --- Mode cycling ---
+  {
+    id: "agent-mode-cycle-shift-tab",
+    action: "agent.mode.cycle",
+    combo: "Shift+Tab",
+    when: { hasSelectedAgent: true, commandCenter: false },
+    help: {
+      id: "cycle-mode",
+      section: "agent-input",
+      label: "Cycle permission mode",
+      keys: ["shift", "Tab"],
+    },
+  },
+
   // --- Theme cycling ---
   {
     id: "theme-cycle-cmd-shift-t-mac",
