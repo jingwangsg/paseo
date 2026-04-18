@@ -57,7 +57,7 @@
 | File | Change |
 |---|---|
 | `packages/server/src/shared/messages.ts` | Extend `ExecutionHostSchema` with `ssh` variant; add host management inbound/outbound message schemas |
-| `packages/server/src/server/workspace-registry.ts` | No schema changes (already has `executionHost`); minor: export `FileBackedRegistry` base for reuse |
+| `packages/server/src/server/workspace-registry.ts` | No changes (already has `executionHost`) |
 | `packages/server/src/server/bootstrap.ts` | Wire `RemoteHostManager` into daemon lifecycle |
 | `packages/server/src/server/session.ts` | Route dispatch: check `executionHost`, forward to remote proxy when `kind === "ssh"` |
 | `packages/cli/src/cli.ts` | Register `host` command group |
@@ -77,9 +77,15 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-In `packages/server/src/shared/messages.execution-host.test.ts`, add new tests:
+In `packages/server/src/shared/messages.execution-host.test.ts`, first update the existing "rejects unknown kind" test (it currently uses `{kind: "ssh"}` which will now be valid), then add new tests:
 
 ```typescript
+// REPLACE the existing "rejects unknown kind" test:
+test("rejects unknown kind", () => {
+  expect(() => ExecutionHostSchema.parse({ kind: "docker", image: "x" })).toThrow();
+});
+
+// ADD new tests:
 test("parses ssh host", () => {
   const result = ExecutionHostSchema.parse({
     kind: "ssh",
@@ -251,42 +257,54 @@ const RemoteHostStatusPayloadSchema = z.object({
 
 const AddRemoteHostResponseSchema = z.object({
   type: z.literal("add_remote_host_response"),
-  requestId: z.string(),
-  success: z.boolean(),
-  error: z.string().optional(),
-  host: RemoteHostStatusPayloadSchema.optional(),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+    host: RemoteHostStatusPayloadSchema.optional(),
+  }),
 });
 
 const RemoveRemoteHostResponseSchema = z.object({
   type: z.literal("remove_remote_host_response"),
-  requestId: z.string(),
-  success: z.boolean(),
-  error: z.string().optional(),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
 });
 
 const FetchRemoteHostsResponseSchema = z.object({
   type: z.literal("fetch_remote_hosts_response"),
-  requestId: z.string(),
-  hosts: z.array(RemoteHostStatusPayloadSchema),
+  payload: z.object({
+    requestId: z.string(),
+    hosts: z.array(RemoteHostStatusPayloadSchema),
+  }),
 });
 
 const RemoteHostUpdateSchema = z.object({
   type: z.literal("remote_host_update"),
-  host: RemoteHostStatusPayloadSchema,
+  payload: z.object({
+    host: RemoteHostStatusPayloadSchema,
+  }),
 });
 
 const RetryRemoteHostResponseSchema = z.object({
   type: z.literal("retry_remote_host_response"),
-  requestId: z.string(),
-  success: z.boolean(),
-  error: z.string().optional(),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
 });
 
 const DeployRemoteHostResponseSchema = z.object({
   type: z.literal("deploy_remote_host_response"),
-  requestId: z.string(),
-  success: z.boolean(),
-  error: z.string().optional(),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
 });
 ```
 
@@ -1612,6 +1630,8 @@ git commit -m "feat(remote): add RemoteHostManager with state machine and scanne
 
 ## Task 8: Remote state sync (HTTP polling)
 
+> **Dependency:** Task 17 (`/api/workspaces` and `/api/agents` endpoints) must be implemented before this task, since the sync service calls those endpoints on remote daemons. Implement Task 17 first, then return here.
+
 **Files:**
 - Create: `packages/server/src/server/remote/remote-sync.ts`
 - Create: `packages/server/src/server/remote/remote-sync.test.ts`
@@ -2178,7 +2198,11 @@ import type { RemoteHostManager } from "./remote/remote-host-manager.js";
 import { extractHostAliasFromProjectId, stripMirrorPrefix } from "./remote/remote-proxy.js";
 ```
 
-Add `remoteHostManager` to the Session constructor dependencies.
+Add `remoteHostManager` to the Session constructor dependencies:
+
+1. In `SessionOptions` type (session.ts:425-466), add: `remoteHostManager?: RemoteHostManager;` (optional so existing callers and tests don't break).
+2. In the constructor destructuring (session.ts:638-669), add: `remoteHostManager` and store as `this.remoteHostManager = remoteHostManager ?? null;`
+3. Add the field: `private readonly remoteHostManager: RemoteHostManager | null;`
 
 In the dispatch switch statement, add cases:
 
@@ -2220,15 +2244,16 @@ Add handler methods to the Session class:
       });
       this.emit({
         type: "add_remote_host_response",
-        requestId: msg.requestId,
-        success: true,
+        payload: { requestId: msg.requestId, success: true },
       });
     } catch (err) {
       this.emit({
         type: "add_remote_host_response",
-        requestId: msg.requestId,
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       });
     }
   }
@@ -2236,17 +2261,33 @@ Add handler methods to the Session class:
   private async handleRemoveRemoteHost(msg: { requestId: string; hostAlias: string }): Promise<void> {
     try {
       await this.remoteHostManager.removeHost(msg.hostAlias);
+
+      // Clean up mirrored projects/workspaces from registries
+      const prefix = `ssh:${msg.hostAlias}:`;
+      const allProjects = await this.projectRegistry.list();
+      for (const p of allProjects) {
+        if (p.projectId.startsWith(prefix)) {
+          await this.projectRegistry.remove(p.projectId);
+        }
+      }
+      const allWorkspaces = await this.workspaceRegistry.list();
+      for (const w of allWorkspaces) {
+        if (w.workspaceId.startsWith(prefix)) {
+          await this.workspaceRegistry.remove(w.workspaceId);
+        }
+      }
       this.emit({
         type: "remove_remote_host_response",
-        requestId: msg.requestId,
-        success: true,
+        payload: { requestId: msg.requestId, success: true },
       });
     } catch (err) {
       this.emit({
         type: "remove_remote_host_response",
-        requestId: msg.requestId,
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       });
     }
   }
@@ -2255,8 +2296,7 @@ Add handler methods to the Session class:
     const hosts = this.remoteHostManager.listStatuses();
     this.emit({
       type: "fetch_remote_hosts_response",
-      requestId: msg.requestId,
-      hosts,
+      payload: { requestId: msg.requestId, hosts },
     });
   }
 
@@ -2265,15 +2305,16 @@ Add handler methods to the Session class:
       await this.remoteHostManager.retryHost(msg.hostAlias);
       this.emit({
         type: "retry_remote_host_response",
-        requestId: msg.requestId,
-        success: true,
+        payload: { requestId: msg.requestId, success: true },
       });
     } catch (err) {
       this.emit({
         type: "retry_remote_host_response",
-        requestId: msg.requestId,
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       });
     }
   }
@@ -2283,15 +2324,16 @@ Add handler methods to the Session class:
       await this.remoteHostManager.triggerConnect(msg.hostAlias);
       this.emit({
         type: "deploy_remote_host_response",
-        requestId: msg.requestId,
-        success: true,
+        payload: { requestId: msg.requestId, success: true },
       });
     } catch (err) {
       this.emit({
         type: "deploy_remote_host_response",
-        requestId: msg.requestId,
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
       });
     }
   }
@@ -2299,16 +2341,25 @@ Add handler methods to the Session class:
 
 - [ ] **Step 4: Subscribe session to host status updates**
 
-In the Session constructor or initialization, subscribe to status updates:
+**Backward-compat guard:** Do NOT subscribe all sessions to host status updates unconditionally — old clients will fail to parse `remote_host_update`. Instead, track whether this session has opted in by sending `fetch_remote_hosts_request`. Only send updates to opted-in sessions:
 
 ```typescript
-    this.remoteHostManager.on("status_update", (status) => {
-      this.emit({
-        type: "remote_host_update",
-        host: status,
+    // Add a field to Session:
+    private remoteHostSubscribed = false;
+
+    // In handleFetchRemoteHosts, after emitting the response:
+    if (!this.remoteHostSubscribed && this.remoteHostManager) {
+      this.remoteHostSubscribed = true;
+      this.remoteHostManager.on("status_update", (status) => {
+        this.emit({
+          type: "remote_host_update",
+          payload: { host: status },
+        });
       });
-    });
+    }
 ```
+
+This ensures old clients that never send `fetch_remote_hosts_request` never receive the new message type.
 
 - [ ] **Step 5: Typecheck and format**
 
@@ -2661,7 +2712,7 @@ Locate where methods like `fetchAgents` and `createAgent` are defined on the con
 
 - [ ] **Step 2: Add methods to the client**
 
-Add these methods to the daemon client (following the existing request/response pattern):
+Add these methods to the `DaemonClient` class in `packages/server/src/client/daemon-client.ts`, following the existing `sendCorrelatedSessionRequest` pattern (see e.g. `fetchAgentTimeline` at line ~1330):
 
 ```typescript
   async addRemoteHost(input: {
@@ -2671,31 +2722,53 @@ Add these methods to the daemon client (following the existing request/response 
     port?: number;
     identityFile?: string;
   }): Promise<{ success: boolean; error?: string }> {
-    return this.sendRequest("add_remote_host_request", input, "add_remote_host_response");
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "add_remote_host_request" as const, ...input },
+      responseType: "add_remote_host_response" as const,
+      timeout: 30_000,
+    });
   }
 
   async removeRemoteHost(input: {
     hostAlias: string;
   }): Promise<{ success: boolean; error?: string }> {
-    return this.sendRequest("remove_remote_host_request", input, "remove_remote_host_response");
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "remove_remote_host_request" as const, ...input },
+      responseType: "remove_remote_host_response" as const,
+      timeout: 10_000,
+    });
   }
 
-  async fetchRemoteHosts(): Promise<{ hosts: RemoteHostStatusPayload[] }> {
-    return this.sendRequest("fetch_remote_hosts_request", {}, "fetch_remote_hosts_response");
+  async fetchRemoteHosts(): Promise<{ hosts: Array<{ hostAlias: string; hostname: string; status: string; tunnelPort?: number; daemonVersion?: string; error?: string }> }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "fetch_remote_hosts_request" as const },
+      responseType: "fetch_remote_hosts_response" as const,
+      timeout: 10_000,
+    });
   }
 
   async retryRemoteHost(input: {
     hostAlias: string;
   }): Promise<{ success: boolean; error?: string }> {
-    return this.sendRequest("retry_remote_host_request", input, "retry_remote_host_response");
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "retry_remote_host_request" as const, ...input },
+      responseType: "retry_remote_host_response" as const,
+      timeout: 30_000,
+    });
   }
 
   async deployRemoteHost(input: {
     hostAlias: string;
   }): Promise<{ success: boolean; error?: string }> {
-    return this.sendRequest("deploy_remote_host_request", input, "deploy_remote_host_response");
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "deploy_remote_host_request" as const, ...input },
+      responseType: "deploy_remote_host_response" as const,
+      timeout: 60_000,
+    });
   }
 ```
+
+Note: The `CorrelatedResponseMessage` type (line 503-506) auto-discovers types with `{ payload: { requestId: string } }` shape, so these new response types will automatically work with `sendCorrelatedSessionRequest` — no manual type registration needed.
 
 - [ ] **Step 3: Typecheck and format**
 
@@ -2776,7 +2849,7 @@ Create `packages/app/src/components/sidebar-host-group.tsx`:
 ```tsx
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/use-theme";
-import type { RemoteHostConnectionStatus } from "@server/remote/types";
+import type { RemoteHostConnectionStatus } from "@server/server/remote/types";
 
 interface Props {
   hostAlias: string | null;
@@ -2945,7 +3018,7 @@ In the message handler (wherever `workspace_update` and other outbound messages 
 
 ```typescript
 case "remote_host_update": {
-  const { host } = msg;
+  const { host } = msg.payload;
   set((state) => {
     const next = new Map(state.remoteHosts);
     next.set(host.hostAlias, host);
@@ -2959,7 +3032,7 @@ case "remote_host_update": {
 
 ```typescript
 case "fetch_remote_hosts_response": {
-  const { hosts } = msg.payload;
+  const { hosts } = msg.payload;  // payload wrapper matches schema
   set((state) => {
     const next = new Map<string, RemoteHostStatusPayload>();
     for (const h of hosts) {
