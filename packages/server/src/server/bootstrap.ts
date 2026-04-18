@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer as createHTTPServer } from "http";
 import { createReadStream, unlinkSync, existsSync } from "fs";
-import { stat } from "fs/promises";
+import { stat, readFile } from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname as getHostname } from "node:os";
 import path from "node:path";
@@ -120,6 +120,9 @@ import type {
   ProviderOverride,
 } from "./agent/provider-launch-config.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
+import { RemoteHostRegistry } from "./remote/remote-host-registry.js";
+import { RemoteHostManager } from "./remote/remote-host-manager.js";
+import { RemoteSyncService } from "./remote/remote-sync.js";
 
 type AgentMcpTransportMap = Map<string, StreamableHTTPServerTransport>;
 
@@ -427,6 +430,52 @@ export async function createPaseoDaemon(
       paseoHome: config.paseoHome,
       workspaceGitService,
     });
+    const remoteHostRegistry = new RemoteHostRegistry(
+      path.join(config.paseoHome, "hosts.json"),
+      logger,
+    );
+    await remoteHostRegistry.initialize();
+    logger.info({ elapsed: elapsed() }, "Remote host registry initialized");
+
+    const remoteHostManager = new RemoteHostManager({
+      registry: remoteHostRegistry,
+      logger,
+      localVersion: daemonVersion,
+      getBinary: async (target: string) => {
+        const cachePath = path.join(config.paseoHome, "cache", `paseo-daemon-${target}`);
+        try {
+          return await readFile(cachePath);
+        } catch {
+          throw new Error(
+            `No pre-built binary for ${target} at ${cachePath}. ` +
+              `Build it with: ./scripts/build-sea.sh ${target}`,
+          );
+        }
+      },
+    });
+    await remoteHostManager.initialize();
+    logger.info({ elapsed: elapsed() }, "Remote host manager initialized");
+
+    const remoteSyncService = new RemoteSyncService(logger);
+
+    // Wire sync: when a host becomes ready, start syncing its state
+    remoteHostManager.on("host_ready", (hostAlias: string, tunnelPort: number) => {
+      const state = remoteHostManager.getHostState(hostAlias);
+      if (!state) return;
+      remoteSyncService.startSyncForHost({
+        hostAlias,
+        hostname: state.record.hostname,
+        tunnelPort,
+        projectRegistry,
+        workspaceRegistry,
+      });
+    });
+
+    // Wire sync: when a host is removed or goes unreachable, stop syncing
+    remoteHostManager.on("host_removed", (hostAlias: string) => {
+      remoteSyncService.stopSyncForHost(hostAlias);
+    });
+
     const loopService = new LoopService({
       paseoHome: config.paseoHome,
       logger,
@@ -657,6 +706,7 @@ export async function createPaseoDaemon(
               scheduleService,
               checkoutDiffManager,
               workspaceGitService,
+              remoteHostManager,
             );
 
             if (typeof process.send === "function" && process.env.PASEO_SUPERVISED === "1") {
@@ -668,6 +718,9 @@ export async function createPaseoDaemon(
                     : boundListenTarget.path,
               });
             }
+
+            remoteHostManager.startScanner();
+            logger.info({ elapsed: elapsed() }, "Remote host scanner started");
 
             if (relayEnabled) {
               const offer = await createConnectionOfferV2({
@@ -715,6 +768,8 @@ export async function createPaseoDaemon(
     };
 
     const stop = async () => {
+      remoteSyncService.stopAll();
+      await remoteHostManager.stop();
       await closeAllAgents(logger, agentManager);
       await agentManager.flush().catch(() => undefined);
       detachAgentStoragePersistence();
