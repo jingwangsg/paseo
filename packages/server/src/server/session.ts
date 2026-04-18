@@ -6580,6 +6580,16 @@ export class Session {
     requestId: string,
     timeoutMs?: number,
   ): Promise<void> {
+    if (isRemoteAgentId(agentIdOrIdentifier)) {
+      this.forwardToRemoteAgent(agentIdOrIdentifier, {
+        type: "wait_for_finish_request",
+        agentId: agentIdOrIdentifier,
+        requestId,
+        ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+      });
+      return;
+    }
+
     const resolved = await this.resolveAgentIdentifier(agentIdOrIdentifier);
     if (!resolved.ok) {
       this.emit({
@@ -7348,6 +7358,13 @@ export class Session {
           agent.id = rewriteRemoteAgentId(hostAlias, agent.id);
         }
         payload.agent = agent;
+      }
+      if (payload.final && typeof payload.final === "object") {
+        const final = { ...(payload.final as Record<string, unknown>) };
+        if (typeof final.id === "string") {
+          final.id = rewriteRemoteAgentId(hostAlias, final.id);
+        }
+        payload.final = final;
       }
       result.payload = payload;
     }
