@@ -101,7 +101,9 @@ function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
 export class RemoteSyncService {
   private readonly logger: Logger;
   private timers = new Map<string, ReturnType<typeof setInterval>>();
-  private stopped = new Set<string>(); // Hosts that have been stopped
+  /** Per-host generation counter: incremented on every start/stop. Sync closures
+   *  capture the generation at creation time and bail if it no longer matches. */
+  private syncGeneration = new Map<string, number>();
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: "remote-sync" });
@@ -125,15 +127,21 @@ export class RemoteSyncService {
     const { hostAlias, hostname, tunnelPort, projectRegistry, workspaceRegistry } = options;
 
     this.stopSyncForHost(hostAlias);
-    this.stopped.delete(hostAlias);
+
+    // Assign a new generation — any in-flight sync from a previous start will
+    // see a stale generation and bail before mutating registries.
+    const gen = (this.syncGeneration.get(hostAlias) ?? 0) + 1;
+    this.syncGeneration.set(hostAlias, gen);
 
     const api = createRemoteDaemonApi(tunnelPort);
     const prefix = `ssh:${hostAlias}:`;
 
+    const isStale = () => this.syncGeneration.get(hostAlias) !== gen;
+
     let syncing = false;
     const sync = async () => {
-      if (syncing) return; // Skip if previous poll still running
-      if (this.stopped.has(hostAlias)) return;
+      if (syncing) return;
+      if (isStale()) return;
       syncing = true;
       try {
         const [remote, allProjects, allWorkspaces] = await Promise.all([
@@ -142,7 +150,7 @@ export class RemoteSyncService {
           workspaceRegistry.list(),
         ]);
 
-        if (this.stopped.has(hostAlias)) return;
+        if (isStale()) return;
 
         const existingMirrorIds = new Set(
           allProjects.filter((p) => p.projectId.startsWith(prefix)).map((p) => p.projectId),
@@ -153,11 +161,17 @@ export class RemoteSyncService {
           hostname,
           remoteProjects: remote.projects,
           existingMirrorIds,
-          onUpsert: (record) => projectRegistry.upsert(record),
-          onRemove: (id) => projectRegistry.remove(id),
+          onUpsert: (record) => {
+            if (isStale()) return;
+            return projectRegistry.upsert(record);
+          },
+          onRemove: (id) => {
+            if (isStale()) return;
+            return projectRegistry.remove(id);
+          },
         });
 
-        if (this.stopped.has(hostAlias)) return;
+        if (isStale()) return;
 
         const existingWsMirrorIds = new Set(
           allWorkspaces.filter((w) => w.workspaceId.startsWith(prefix)).map((w) => w.workspaceId),
@@ -167,8 +181,14 @@ export class RemoteSyncService {
           hostAlias,
           remoteWorkspaces: remote.workspaces,
           existingMirrorIds: existingWsMirrorIds,
-          onUpsert: (record) => workspaceRegistry.upsert(record),
-          onRemove: (id) => workspaceRegistry.remove(id),
+          onUpsert: (record) => {
+            if (isStale()) return;
+            return workspaceRegistry.upsert(record);
+          },
+          onRemove: (id) => {
+            if (isStale()) return;
+            return workspaceRegistry.remove(id);
+          },
         });
       } catch (err) {
         this.logger.warn({ err, hostAlias }, "Remote sync failed");
@@ -185,7 +205,9 @@ export class RemoteSyncService {
   }
 
   stopSyncForHost(hostAlias: string): void {
-    this.stopped.add(hostAlias);
+    // Bump generation so any in-flight sync for this alias becomes stale
+    const gen = (this.syncGeneration.get(hostAlias) ?? 0) + 1;
+    this.syncGeneration.set(hostAlias, gen);
     const timer = this.timers.get(hostAlias);
     if (timer) {
       clearInterval(timer);
