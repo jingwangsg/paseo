@@ -34,6 +34,7 @@ export class RemoteHostManager extends EventEmitter {
   private readonly getBinary: (target: string) => Promise<Buffer>;
   private readonly scanIntervalMs: number;
   private readonly hosts = new Map<string, RemoteHostState>();
+  private nextGeneration = 0;
   private readonly tunnels = new Map<string, SshTunnel>();
   private scanTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -59,6 +60,7 @@ export class RemoteHostManager extends EventEmitter {
         tunnelPort: null,
         daemonVersion: null,
         error: null,
+        generation: ++this.nextGeneration,
       });
     }
     this.logger.info({ count: records.length }, "Loaded registered remote hosts");
@@ -120,6 +122,7 @@ export class RemoteHostManager extends EventEmitter {
       tunnelPort: null,
       daemonVersion: null,
       error: null,
+      generation: ++this.nextGeneration,
     });
 
     this.emitStatusUpdate(input.hostAlias);
@@ -168,6 +171,7 @@ export class RemoteHostManager extends EventEmitter {
   async triggerConnect(alias: string): Promise<void> {
     const state = this.hosts.get(alias);
     if (!state) return;
+    const gen = state.generation; // Capture at start to detect alias-reuse races
 
     if (state.status === "connecting" || state.status === "deploying" || state.status === "ready") {
       return;
@@ -185,8 +189,8 @@ export class RemoteHostManager extends EventEmitter {
 
       const reachable = await ssh.testConnection();
 
-      // Re-check after async — host may have been removed
-      if (!this.hosts.has(alias)) return;
+      // Re-check after async — host may have been removed or re-added
+      if (this.hosts.get(alias)?.generation !== gen) return;
 
       if (!reachable) {
         this.setStatus(alias, "unreachable", "SSH connection failed");
@@ -201,8 +205,8 @@ export class RemoteHostManager extends EventEmitter {
         logger: this.logger.child({ hostAlias: alias }),
       });
 
-      // Re-check after async — host may have been removed
-      if (!this.hosts.has(alias)) return;
+      // Re-check after async — host may have been removed or re-added
+      if (this.hosts.get(alias)?.generation !== gen) return;
 
       if (!deployResult.success) {
         this.setStatus(alias, "failed", deployResult.error ?? "Deployment failed");
@@ -225,8 +229,8 @@ export class RemoteHostManager extends EventEmitter {
         this.logger,
       );
 
-      // Re-check before storing tunnel — host may have been removed
-      if (!this.hosts.has(alias)) {
+      // Re-check before storing tunnel — host may have been removed or re-added
+      if (this.hosts.get(alias)?.generation !== gen) {
         tunnel.close();
         return;
       }

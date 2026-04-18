@@ -7,14 +7,14 @@ export function mirrorProjectId(hostAlias: string, remoteProjectId: string): str
   return `ssh:${hostAlias}:${remoteProjectId}`;
 }
 
-export function reconcileRemoteProjects(options: {
+export async function reconcileRemoteProjects(options: {
   hostAlias: string;
   hostname: string;
   remoteProjects: PersistedProjectRecord[];
   existingMirrorIds: Set<string>;
-  onUpsert: (record: PersistedProjectRecord) => void;
-  onRemove: (projectId: string) => void;
-}): void {
+  onUpsert: (record: PersistedProjectRecord) => Promise<void> | void;
+  onRemove: (projectId: string) => Promise<void> | void;
+}): Promise<void> {
   const { hostAlias, hostname, remoteProjects, existingMirrorIds, onUpsert, onRemove } = options;
   const seenIds = new Set<string>();
 
@@ -22,7 +22,7 @@ export function reconcileRemoteProjects(options: {
     const mirroredId = mirrorProjectId(hostAlias, remoteProject.projectId);
     seenIds.add(mirroredId);
 
-    onUpsert({
+    await onUpsert({
       ...remoteProject,
       projectId: mirroredId,
       executionHost: {
@@ -35,7 +35,7 @@ export function reconcileRemoteProjects(options: {
 
   for (const existingId of existingMirrorIds) {
     if (!seenIds.has(existingId)) {
-      onRemove(existingId);
+      await onRemove(existingId);
     }
   }
 }
@@ -44,13 +44,13 @@ export function mirrorWorkspaceId(hostAlias: string, remoteWorkspaceId: string):
   return `ssh:${hostAlias}:${remoteWorkspaceId}`;
 }
 
-export function reconcileRemoteWorkspaces(options: {
+export async function reconcileRemoteWorkspaces(options: {
   hostAlias: string;
   remoteWorkspaces: PersistedWorkspaceRecord[];
   existingMirrorIds: Set<string>;
-  onUpsert: (record: PersistedWorkspaceRecord) => void;
-  onRemove: (workspaceId: string) => void;
-}): void {
+  onUpsert: (record: PersistedWorkspaceRecord) => Promise<void> | void;
+  onRemove: (workspaceId: string) => Promise<void> | void;
+}): Promise<void> {
   const { hostAlias, remoteWorkspaces, existingMirrorIds, onUpsert, onRemove } = options;
   const seenIds = new Set<string>();
 
@@ -61,7 +61,7 @@ export function reconcileRemoteWorkspaces(options: {
     // NOTE: Mirrored workspaces retain their remote cwd paths. Operations like
     // terminal creation and agent spawning on these workspaces require the remote
     // proxy routing (not yet implemented — see plan "Out of scope" section).
-    onUpsert({
+    await onUpsert({
       ...ws,
       workspaceId: mirroredId,
       projectId: mirrorProjectId(hostAlias, ws.projectId),
@@ -70,7 +70,7 @@ export function reconcileRemoteWorkspaces(options: {
 
   for (const existingId of existingMirrorIds) {
     if (!seenIds.has(existingId)) {
-      onRemove(existingId);
+      await onRemove(existingId);
     }
   }
 }
@@ -101,6 +101,7 @@ function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
 export class RemoteSyncService {
   private readonly logger: Logger;
   private timers = new Map<string, ReturnType<typeof setInterval>>();
+  private stopped = new Set<string>(); // Hosts that have been stopped
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: "remote-sync" });
@@ -124,6 +125,7 @@ export class RemoteSyncService {
     const { hostAlias, hostname, tunnelPort, projectRegistry, workspaceRegistry } = options;
 
     this.stopSyncForHost(hostAlias);
+    this.stopped.delete(hostAlias);
 
     const api = createRemoteDaemonApi(tunnelPort);
     const prefix = `ssh:${hostAlias}:`;
@@ -131,6 +133,7 @@ export class RemoteSyncService {
     let syncing = false;
     const sync = async () => {
       if (syncing) return; // Skip if previous poll still running
+      if (this.stopped.has(hostAlias)) return;
       syncing = true;
       try {
         const [remote, allProjects, allWorkspaces] = await Promise.all([
@@ -139,11 +142,13 @@ export class RemoteSyncService {
           workspaceRegistry.list(),
         ]);
 
+        if (this.stopped.has(hostAlias)) return;
+
         const existingMirrorIds = new Set(
           allProjects.filter((p) => p.projectId.startsWith(prefix)).map((p) => p.projectId),
         );
 
-        reconcileRemoteProjects({
+        await reconcileRemoteProjects({
           hostAlias,
           hostname,
           remoteProjects: remote.projects,
@@ -152,11 +157,13 @@ export class RemoteSyncService {
           onRemove: (id) => projectRegistry.remove(id),
         });
 
+        if (this.stopped.has(hostAlias)) return;
+
         const existingWsMirrorIds = new Set(
           allWorkspaces.filter((w) => w.workspaceId.startsWith(prefix)).map((w) => w.workspaceId),
         );
 
-        reconcileRemoteWorkspaces({
+        await reconcileRemoteWorkspaces({
           hostAlias,
           remoteWorkspaces: remote.workspaces,
           existingMirrorIds: existingWsMirrorIds,
@@ -178,6 +185,7 @@ export class RemoteSyncService {
   }
 
   stopSyncForHost(hostAlias: string): void {
+    this.stopped.add(hostAlias);
     const timer = this.timers.get(hostAlias);
     if (timer) {
       clearInterval(timer);

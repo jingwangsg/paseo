@@ -3,7 +3,7 @@ import { reconcileRemoteProjects, reconcileRemoteWorkspaces } from "./remote-syn
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../workspace-registry.js";
 
 describe("reconcileRemoteProjects", () => {
-  test("upserts new remote projects with ssh executionHost", () => {
+  test("upserts new remote projects with ssh executionHost", async () => {
     const upserted: PersistedProjectRecord[] = [];
     const removed: string[] = [];
 
@@ -20,13 +20,13 @@ describe("reconcileRemoteProjects", () => {
       },
     ];
 
-    reconcileRemoteProjects({
+    await reconcileRemoteProjects({
       hostAlias: "osmo_9000",
       hostname: "192.168.1.100",
       remoteProjects,
       existingMirrorIds: new Set(),
-      onUpsert: (record) => upserted.push(record),
-      onRemove: (id) => removed.push(id),
+      onUpsert: async (record) => upserted.push(record),
+      onRemove: async (id) => removed.push(id),
     });
 
     expect(upserted).toHaveLength(1);
@@ -38,17 +38,17 @@ describe("reconcileRemoteProjects", () => {
     expect(upserted[0].projectId).toBe("ssh:osmo_9000:remote:github.com/user/repo");
   });
 
-  test("removes stale mirrors not in remote list", () => {
+  test("removes stale mirrors not in remote list", async () => {
     const upserted: PersistedProjectRecord[] = [];
     const removed: string[] = [];
 
-    reconcileRemoteProjects({
+    await reconcileRemoteProjects({
       hostAlias: "osmo_9000",
       hostname: "192.168.1.100",
       remoteProjects: [],
       existingMirrorIds: new Set(["ssh:osmo_9000:remote:github.com/user/old-repo"]),
-      onUpsert: (record) => upserted.push(record),
-      onRemove: (id) => removed.push(id),
+      onUpsert: async (record) => upserted.push(record),
+      onRemove: async (id) => removed.push(id),
     });
 
     expect(upserted).toHaveLength(0);
@@ -57,7 +57,7 @@ describe("reconcileRemoteProjects", () => {
 });
 
 describe("reconcileRemoteWorkspaces", () => {
-  test("upserts remote workspaces with mirrored IDs", () => {
+  test("upserts remote workspaces with mirrored IDs", async () => {
     const upserted: PersistedWorkspaceRecord[] = [];
     const removed: string[] = [];
 
@@ -74,12 +74,12 @@ describe("reconcileRemoteWorkspaces", () => {
       },
     ];
 
-    reconcileRemoteWorkspaces({
+    await reconcileRemoteWorkspaces({
       hostAlias: "osmo_9000",
       remoteWorkspaces,
       existingMirrorIds: new Set(),
-      onUpsert: (record) => upserted.push(record),
-      onRemove: (id) => removed.push(id),
+      onUpsert: async (record) => upserted.push(record),
+      onRemove: async (id) => removed.push(id),
     });
 
     expect(upserted).toHaveLength(1);
@@ -88,16 +88,16 @@ describe("reconcileRemoteWorkspaces", () => {
     expect(removed).toHaveLength(0);
   });
 
-  test("removes stale workspace mirrors not in remote list", () => {
+  test("removes stale workspace mirrors not in remote list", async () => {
     const upserted: PersistedWorkspaceRecord[] = [];
     const removed: string[] = [];
 
-    reconcileRemoteWorkspaces({
+    await reconcileRemoteWorkspaces({
       hostAlias: "osmo_9000",
       remoteWorkspaces: [],
       existingMirrorIds: new Set(["ssh:osmo_9000:ws:old"]),
-      onUpsert: (record) => upserted.push(record),
-      onRemove: (id) => removed.push(id),
+      onUpsert: async (record) => upserted.push(record),
+      onRemove: async (id) => removed.push(id),
     });
 
     expect(upserted).toHaveLength(0);

@@ -25,4 +25,5 @@ export interface RemoteHostState {
   tunnelPort: number | null;
   daemonVersion: string | null;
   error: string | null;
+  generation: number; // Incremented on each addHost, used to detect stale triggerConnect
 }
