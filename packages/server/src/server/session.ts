@@ -4597,6 +4597,8 @@ export class Session {
         agentStorage: this.agentStorage,
         archiveWorkspaceRecord: (workspaceId) => this.archiveWorkspaceRecord(workspaceId),
         emit: (message) => this.emit(message),
+        emitWorkspaceUpdatesForWorkspaceIds: (workspaceIds) =>
+          this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds),
         emitWorkspaceUpdatesForCwds: (cwds) => this.emitWorkspaceUpdatesForCwds(cwds),
         isPathWithinRoot: (rootPath, candidatePath) =>
           this.isPathWithinRoot(rootPath, candidatePath),
@@ -5831,6 +5833,16 @@ export class Session {
     await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId], options);
   }
 
+  private async emitWorkspaceUpdateForWorkspaceId(
+    workspaceId: string,
+    options?: { skipReconcile?: boolean },
+  ): Promise<void> {
+    await this.emitWorkspaceUpdatesForWorkspaceIds(
+      [normalizePersistedWorkspaceId(workspaceId)],
+      options,
+    );
+  }
+
   private async emitWorkspaceUpdatesForCwds(cwds: Iterable<string>): Promise<void> {
     const activeWorkspaces = (await this.workspaceRegistry.list()).filter(
       (workspace) => !workspace.archivedAt,
@@ -6138,12 +6150,9 @@ export class Session {
       if (!existing) {
         throw new Error(`Workspace not found: ${request.workspaceId}`);
       }
-      if (existing.kind === "worktree") {
-        throw new Error("Use worktree archive for Paseo worktrees");
-      }
       const archivedAt = new Date().toISOString();
       await this.archiveWorkspaceRecord(request.workspaceId, archivedAt);
-      await this.emitWorkspaceUpdateForCwd(existing.cwd);
+      await this.emitWorkspaceUpdateForWorkspaceId(request.workspaceId);
       this.emit({
         type: "archive_workspace_response",
         payload: {

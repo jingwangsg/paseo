@@ -1753,6 +1753,111 @@ describe("workspace aggregation", () => {
     expect(response?.payload.error).toBeNull();
   });
 
+  test("archive_workspace_request hides worktree records without deleting them", async () => {
+    const emitted: Array<{ type: string; payload: unknown }> = [];
+    const session = createSessionForWorkspaceTests() as any;
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: "/tmp/repo/.paseo/worktrees/feature-a",
+      projectId: "/tmp/repo",
+      cwd: "/tmp/repo/.paseo/worktrees/feature-a",
+      kind: "worktree",
+      displayName: "feature-a",
+      createdAt: "2026-03-01T12:00:00.000Z",
+      updatedAt: "2026-03-01T12:00:00.000Z",
+    });
+
+    session.emit = (message: any) => emitted.push(message);
+    session.workspaceRegistry.get = async () => workspace;
+    session.workspaceRegistry.archive = async (_workspaceId: string, archivedAt: string) => {
+      workspace.archivedAt = archivedAt;
+    };
+    session.workspaceRegistry.list = async () => [workspace];
+    session.projectRegistry.archive = async () => {};
+
+    await session.handleMessage({
+      type: "archive_workspace_request",
+      workspaceId: workspace.workspaceId,
+      requestId: "req-archive-worktree",
+    });
+
+    expect(workspace.archivedAt).toBeTruthy();
+    const response = emitted.find(
+      (message) => message.type === "archive_workspace_response",
+    ) as any;
+    expect(response?.payload.error).toBeNull();
+  });
+
+  test("archive_workspace_request emits remove for the archived worktree id", async () => {
+    const emitted: Array<{ type: string; payload: unknown }> = [];
+    const session = createSessionForWorkspaceTests() as any;
+    const rootWorkspace = createPersistedWorkspaceRecord({
+      workspaceId: "/tmp/repo",
+      projectId: "/tmp/repo",
+      cwd: "/tmp/repo",
+      kind: "local_checkout",
+      displayName: "main",
+      createdAt: "2026-03-01T12:00:00.000Z",
+      updatedAt: "2026-03-01T12:00:00.000Z",
+    });
+    const worktreeWorkspace = createPersistedWorkspaceRecord({
+      workspaceId: "/tmp/repo/.paseo/worktrees/feature-a",
+      projectId: "/tmp/repo",
+      cwd: "/tmp/repo/.paseo/worktrees/feature-a",
+      kind: "worktree",
+      displayName: "feature-a",
+      createdAt: "2026-03-01T12:00:00.000Z",
+      updatedAt: "2026-03-01T12:00:00.000Z",
+    });
+
+    session.emit = (message: any) => emitted.push(message);
+    session.workspaceUpdatesSubscription = {
+      subscriptionId: "sub-archive-worktree",
+      filter: undefined,
+      isBootstrapping: false,
+      pendingUpdatesByWorkspaceId: new Map(),
+      lastEmittedByWorkspaceId: new Map(),
+    };
+    session.workspaceRegistry.get = async (workspaceId: string) =>
+      workspaceId === worktreeWorkspace.workspaceId ? worktreeWorkspace : null;
+    session.workspaceRegistry.archive = async (workspaceId: string, archivedAt: string) => {
+      if (workspaceId === worktreeWorkspace.workspaceId) {
+        worktreeWorkspace.archivedAt = archivedAt;
+      }
+    };
+    session.workspaceRegistry.list = async () => [rootWorkspace, worktreeWorkspace];
+    session.projectRegistry.archive = async () => {};
+    session.buildWorkspaceDescriptorMap = async () =>
+      new Map([
+        [
+          rootWorkspace.workspaceId,
+          {
+            id: rootWorkspace.workspaceId,
+            projectId: rootWorkspace.projectId,
+            projectDisplayName: "repo",
+            projectRootPath: rootWorkspace.workspaceId,
+            projectKind: "git",
+            workspaceKind: "local_checkout",
+            name: "main",
+            status: "done",
+            activityAt: null,
+          },
+        ],
+      ]);
+    session.reconcileActiveWorkspaceRecords = async () => new Set();
+
+    await session.handleMessage({
+      type: "archive_workspace_request",
+      workspaceId: worktreeWorkspace.workspaceId,
+      requestId: "req-archive-worktree-remove",
+    });
+
+    const workspaceUpdate = emitted.find((message) => message.type === "workspace_update") as any;
+    expect(workspaceUpdate?.payload).toEqual({
+      kind: "remove",
+      id: worktreeWorkspace.workspaceId,
+    });
+  });
+
   test("opening a new worktree reconciles older local workspaces into the remote project", async () => {
     const emitted: Array<{ type: string; payload: unknown }> = [];
     const session = createSessionForWorkspaceTests() as any;

@@ -67,6 +67,7 @@ type ArchivePaseoWorktreeDependencies = {
   agentStorage: Pick<AgentStorage, "list" | "remove">;
   archiveWorkspaceRecord: (workspaceId: string) => Promise<void>;
   emit: EmitSessionMessage;
+  emitWorkspaceUpdatesForWorkspaceIds: (workspaceIds: Iterable<string>) => Promise<void>;
   emitWorkspaceUpdatesForCwds: (cwds: Iterable<string>) => Promise<void>;
   isPathWithinRoot: (rootPath: string, candidatePath: string) => boolean;
   killTerminalsUnderPath: (rootPath: string) => Promise<void>;
@@ -347,7 +348,6 @@ export async function archivePaseoWorktree(
   }
 
   const removedAgents = new Set<string>();
-  const affectedWorkspaceCwds = new Set<string>([targetPath]);
   const affectedWorkspaceIds = new Set<string>([normalizePersistedWorkspaceId(targetPath)]);
   const agents = dependencies.agentManager.listAgents();
   for (const agent of agents) {
@@ -356,7 +356,6 @@ export async function archivePaseoWorktree(
     }
 
     removedAgents.add(agent.id);
-    affectedWorkspaceCwds.add(agent.cwd);
     affectedWorkspaceIds.add(normalizePersistedWorkspaceId(agent.cwd));
     try {
       await dependencies.agentManager.closeAgent(agent.id);
@@ -377,7 +376,6 @@ export async function archivePaseoWorktree(
     }
 
     removedAgents.add(record.id);
-    affectedWorkspaceCwds.add(record.cwd);
     affectedWorkspaceIds.add(normalizePersistedWorkspaceId(record.cwd));
     try {
       await dependencies.agentStorage.remove(record.id);
@@ -408,14 +406,18 @@ export async function archivePaseoWorktree(
     });
   }
 
-  await dependencies.emitWorkspaceUpdatesForCwds(affectedWorkspaceCwds);
+  await dependencies.emitWorkspaceUpdatesForWorkspaceIds(affectedWorkspaceIds);
 
   return Array.from(removedAgents);
 }
 
 export async function handlePaseoWorktreeArchiveRequest(
-  dependencies: Omit<ArchivePaseoWorktreeDependencies, "emitWorkspaceUpdatesForCwds"> & {
+  dependencies: Omit<
+    ArchivePaseoWorktreeDependencies,
+    "emitWorkspaceUpdatesForWorkspaceIds" | "emitWorkspaceUpdatesForCwds"
+  > & {
     emit: EmitSessionMessage;
+    emitWorkspaceUpdatesForWorkspaceIds: (workspaceIds: Iterable<string>) => Promise<void>;
     emitWorkspaceUpdatesForCwds: (cwds: Iterable<string>) => Promise<void>;
   },
   msg: Extract<SessionInboundMessage, { type: "paseo_worktree_archive_request" }>,
