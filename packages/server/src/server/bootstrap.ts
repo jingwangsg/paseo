@@ -348,6 +348,36 @@ export async function createPaseoDaemon(
       path.join(config.paseoHome, "projects", "workspaces.json"),
       logger,
     );
+    app.get("/api/workspaces", async (_req, res) => {
+      try {
+        const projects = await projectRegistry.list();
+        const workspaces = await workspaceRegistry.list();
+        res.json({ projects, workspaces });
+      } catch (err) {
+        logger.error({ err }, "Failed to list workspaces for API");
+        res.status(500).json({ error: "Failed to list workspaces" });
+      }
+    });
+
+    app.get("/api/agents", async (_req, res) => {
+      try {
+        const records = await agentStorage.list();
+        const agents = records.map((r) => ({
+          id: r.id,
+          provider: r.provider,
+          cwd: r.cwd,
+          status: r.lastStatus ?? "closed",
+          title: r.title ?? null,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        }));
+        res.json({ agents });
+      } catch (err) {
+        logger.error({ err }, "Failed to list agents for API");
+        res.status(500).json({ error: "Failed to list agents" });
+      }
+    });
+
     const chatService = new FileBackedChatService({
       paseoHome: config.paseoHome,
       logger,
