@@ -242,4 +242,49 @@ describe("terminal-emulator-runtime", () => {
 
     expect(fitAndEmitResize).not.toHaveBeenCalled();
   });
+
+  it("splits large writes into frame-budgeted chunks", () => {
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+    const onCommitted = vi.fn();
+
+    // 150KB string — exceeds the 64KB frame budget
+    const largeText = "x".repeat(150 * 1024);
+    runtime.write({ text: largeText, onCommitted });
+
+    // First chunk should be dispatched immediately (64KB)
+    expect(writeTexts.length).toBe(1);
+    expect(writeTexts[0]!.length).toBe(64 * 1024);
+    expect(onCommitted).not.toHaveBeenCalled();
+
+    // Simulate xterm completing the first chunk write
+    writeCallbacks[0]?.();
+
+    // Second chunk dispatched after first completes (another 64KB)
+    expect(writeTexts.length).toBe(2);
+    expect(writeTexts[1]!.length).toBe(64 * 1024);
+
+    // Complete second chunk
+    writeCallbacks[1]?.();
+
+    // Third chunk: remaining 22KB
+    expect(writeTexts.length).toBe(3);
+    expect(writeTexts[2]!.length).toBe(150 * 1024 - 128 * 1024);
+
+    // Complete third chunk — onCommitted fires
+    writeCallbacks[2]?.();
+    expect(onCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not chunk writes smaller than the frame budget", () => {
+    const { runtime, writeCallbacks, writeTexts } = createRuntimeWithTerminal();
+    const onCommitted = vi.fn();
+
+    const smallText = "hello world";
+    runtime.write({ text: smallText, onCommitted });
+
+    expect(writeTexts).toEqual(["hello world"]);
+
+    writeCallbacks[0]?.();
+    expect(onCommitted).toHaveBeenCalledTimes(1);
+  });
 });

@@ -80,6 +80,7 @@ const isMac =
 const DEFAULT_TOUCH_SCROLL_LINE_HEIGHT_PX = 18;
 const FIT_TIMEOUT_DELAYS_MS = [0, 16, 48, 120, 250, 500, 1_000, 2_000];
 const OUTPUT_OPERATION_TIMEOUT_MS = 5_000;
+const OUTPUT_FRAME_BUDGET_BYTES = 64 * 1024;
 
 const DEFAULT_TERMINAL_FONT_FAMILY = [
   // Prefer common developer fonts, with Nerd Font variants for prompt/TUI glyphs.
@@ -628,13 +629,38 @@ export class TerminalEmulatorRuntime {
       finalizeOperation(operation);
     }, OUTPUT_OPERATION_TIMEOUT_MS);
 
-    try {
-      terminal.write(text, () => {
+    if (text.length <= OUTPUT_FRAME_BUDGET_BYTES) {
+      try {
+        terminal.write(text, () => {
+          finalizeOperation(operation);
+        });
+      } catch {
         finalizeOperation(operation);
-      });
-    } catch {
-      finalizeOperation(operation);
+      }
+      return;
     }
+
+    let offset = 0;
+    const writeNextChunk = () => {
+      if (this.inFlightOutputOperation !== operation || !this.terminal) {
+        return;
+      }
+      const chunk = text.slice(offset, offset + OUTPUT_FRAME_BUDGET_BYTES);
+      offset += OUTPUT_FRAME_BUDGET_BYTES;
+      const isLastChunk = offset >= text.length;
+      try {
+        terminal.write(chunk, () => {
+          if (isLastChunk) {
+            finalizeOperation(operation);
+          } else {
+            writeNextChunk();
+          }
+        });
+      } catch {
+        finalizeOperation(operation);
+      }
+    };
+    writeNextChunk();
   }
 
   private clearInFlightOutputTimeout(): void {
