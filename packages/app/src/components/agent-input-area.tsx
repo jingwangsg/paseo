@@ -43,7 +43,10 @@ import {
   persistAttachmentFromBlob,
   persistAttachmentFromFileUri,
 } from "@/attachments/service";
-import { resolveStatusControlMode } from "@/components/agent-input-area.status-controls";
+import {
+  resolveStatusControlMode,
+  runDraftStatusControlModeCycle,
+} from "@/components/agent-input-area.status-controls";
 import { markScrollInvestigationRender } from "@/utils/scroll-jank-investigation";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
@@ -457,16 +460,19 @@ export function AgentInputArea({
         case "message-input.voice-mute-toggle":
           messageInputRef.current?.runKeyboardAction("voice-mute-toggle");
           return true;
+        case "agent.mode.cycle":
+          return runDraftStatusControlModeCycle(statusControls);
         default:
           return false;
       }
     },
-    [isPaneFocused],
+    [isPaneFocused, statusControls],
   );
 
   useKeyboardActionHandler({
     handlerId: keyboardHandlerIdRef.current,
     actions: [
+      ...(statusControls ? (["agent.mode.cycle"] as const) : []),
       "message-input.focus",
       "message-input.send",
       "message-input.dictation-toggle",

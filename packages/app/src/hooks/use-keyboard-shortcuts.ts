@@ -29,6 +29,7 @@ import { useKeyboardShortcutOverrides } from "@/hooks/use-keyboard-shortcut-over
 import { isNative } from "@/constants/platform";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { runCycleAgentModeShortcut } from "@/keyboard/cycle-agent-mode";
+import { runModeCycleShortcut } from "@/keyboard/mode-cycle-shortcut";
 
 export function useKeyboardShortcuts({
   enabled,
@@ -390,9 +391,17 @@ export function useKeyboardShortcuts({
       }
 
       if (result.match.action === "agent.mode.cycle") {
-        const modeCycleResult = runCycleAgentModeShortcut({
-          selectedAgentId,
-          activeServerId,
+        const modeCycleResult = runModeCycleShortcut({
+          dispatchWorkspaceModeCycle: () =>
+            keyboardActionDispatcher.dispatch({
+              id: "agent.mode.cycle",
+              scope: "workspace",
+            }),
+          runRunningAgentModeCycle: () =>
+            runCycleAgentModeShortcut({
+              selectedAgentId,
+              activeServerId,
+            }),
         });
         if (modeCycleResult.shouldConsume) {
           if (result.match.preventDefault) {
