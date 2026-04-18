@@ -62,6 +62,7 @@ import type {
   SessionInboundMessage,
   SessionOutboundMessage,
   EditorTargetId,
+  RemoteHostStatusPayload,
 } from "../shared/messages.js";
 import type {
   AgentPermissionRequest,
@@ -161,6 +162,10 @@ export type DaemonEvent =
   | {
       type: "providers_snapshot_update";
       payload: Extract<SessionOutboundMessage, { type: "providers_snapshot_update" }>["payload"];
+    }
+  | {
+      type: "remote_host_update";
+      payload: Extract<SessionOutboundMessage, { type: "remote_host_update" }>["payload"];
     }
   | { type: "error"; message: string };
 
@@ -3452,14 +3457,7 @@ export class DaemonClient {
   }
 
   async fetchRemoteHosts(): Promise<{
-    hosts: Array<{
-      hostAlias: string;
-      hostname: string;
-      status: string;
-      tunnelPort?: number;
-      daemonVersion?: string;
-      error?: string;
-    }>;
+    hosts: RemoteHostStatusPayload[];
   }> {
     return this.sendCorrelatedSessionRequest({
       message: { type: "fetch_remote_hosts_request" as const },
@@ -3934,6 +3932,11 @@ export class DaemonClient {
       case "providers_snapshot_update":
         return {
           type: "providers_snapshot_update",
+          payload: msg.payload,
+        };
+      case "remote_host_update":
+        return {
+          type: "remote_host_update",
           payload: msg.payload,
         };
       default:

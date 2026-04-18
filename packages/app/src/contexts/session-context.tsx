@@ -14,6 +14,7 @@ import {
 import type {
   ActivityLogPayload,
   AgentStreamEventPayload,
+  RemoteHostStatusPayload,
   SessionOutboundMessage,
 } from "@server/shared/messages";
 import { parseServerInfoStatusPayload } from "@server/shared/messages";
@@ -280,6 +281,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const flushAgentLastActivity = useSessionStore((state) => state.flushAgentLastActivity);
   const setPendingPermissions = useSessionStore((state) => state.setPendingPermissions);
   const clearDraftInput = useDraftStore((state) => state.clearDraftInput);
+  const setRemoteHosts = useSessionStore((state) => state.setRemoteHosts);
   const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
   const updateSessionClient = useSessionStore((state) => state.updateSessionClient);
   const updateSessionServerInfo = useSessionStore((state) => state.updateSessionServerInfo);
@@ -738,6 +740,32 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     };
   }, [client, hydrateWorkspaces, isConnected]);
 
+  // Hydrate remote hosts on connection
+  useEffect(() => {
+    if (!client || !isConnected) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { hosts } = await client.fetchRemoteHosts();
+        if (cancelled) return;
+        const next = new Map<string, RemoteHostStatusPayload>();
+        for (const h of hosts) {
+          next.set(h.hostAlias, h);
+        }
+        setRemoteHosts(serverId, next);
+      } catch (error) {
+        console.error("[Session] Failed to hydrate remote hosts:", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, isConnected, serverId, setRemoteHosts]);
+
   const applyAgentUpdatePayload = useCallback(
     (update: AgentUpdatePayload) => {
       if (update.kind === "remove") {
@@ -1163,6 +1191,16 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       mergeWorkspaces(serverId, [workspace]);
     });
 
+    const unsubRemoteHostUpdate = client.on("remote_host_update", (message) => {
+      if (message.type !== "remote_host_update") return;
+      const { host } = message.payload;
+      setRemoteHosts(serverId, (prev) => {
+        const next = new Map(prev);
+        next.set(host.hostAlias, host);
+        return next;
+      });
+    });
+
     const unsubStatus = client.on("status", (message) => {
       if (message.type !== "status") return;
       const serverInfo = parseServerInfoStatusPayload(message.payload);
@@ -1512,6 +1550,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubAgentStream();
       unsubAgentTimeline();
       unsubWorkspaceUpdate();
+      unsubRemoteHostUpdate();
       unsubStatus();
       unsubPermissionRequest();
       unsubPermissionResolved();
@@ -1539,6 +1578,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     setAgents,
     mergeWorkspaces,
     removeWorkspace,
+    setRemoteHosts,
     setAgentLastActivity,
     setPendingPermissions,
     setHasHydratedAgents,
