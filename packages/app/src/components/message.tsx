@@ -4,6 +4,7 @@ import {
   Image,
   Pressable,
   ActivityIndicator,
+  ScrollView,
   type LayoutChangeEvent,
   StyleProp,
   ViewStyle,
@@ -1169,6 +1170,34 @@ export const AssistantMessage = memo(function AssistantMessage({
                   paddingVertical: theme.spacing[2],
                 }),
               },
+            ]}
+          >
+            {children}
+          </View>
+        );
+      },
+      table: (node: any, children: ReactNode[], _parent: any, styles: any) => (
+        <ScrollView
+          key={node.key}
+          horizontal
+          showsHorizontalScrollIndicator={true}
+          style={styles.table}
+        >
+          <View style={{ minWidth: "100%" }}>{children}</View>
+        </ScrollView>
+      ),
+      tr: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        const isEvenRow = typeof node.index === "number" && node.index % 2 === 1;
+        const isInThead = Array.isArray(parent)
+          ? parent.some((ancestor: any) => ancestor?.type === "thead")
+          : false;
+
+        return (
+          <View
+            key={node.key}
+            style={[
+              styles.tr,
+              !isInThead && isEvenRow && { backgroundColor: theme.colors.surface1 },
             ]}
           >
             {children}

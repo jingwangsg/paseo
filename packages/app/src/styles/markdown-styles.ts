@@ -211,6 +211,7 @@ export function createMarkdownStyles(theme: Theme) {
       borderColor: theme.colors.border,
       borderRadius: theme.borderRadius.md,
       marginVertical: theme.spacing[3],
+      overflow: "hidden" as const,
     },
 
     thead: {
