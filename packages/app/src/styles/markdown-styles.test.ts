@@ -74,4 +74,13 @@ describe("createMarkdownStyles", () => {
     const styles = createMarkdownStyles(darkTheme);
     expect(styles.strong.fontWeight).toBe(darkTheme.fontWeight.semibold);
   });
+
+  it("inline code has visible padding and border for contrast", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.code_inline).toMatchObject({
+      paddingVertical: 3,
+      paddingHorizontal: darkTheme.spacing[2],
+      borderWidth: 1,
+    });
+  });
 });
