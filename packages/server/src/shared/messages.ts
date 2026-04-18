@@ -206,6 +206,14 @@ const McpServerConfigSchema = z.discriminatedUnion("type", [
 
 export const ExecutionHostSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("local") }),
+  z.object({
+    kind: z.literal("ssh"),
+    hostAlias: z.string(),
+    hostname: z.string(),
+    user: z.string().optional(),
+    port: z.number().optional(),
+    identityFile: z.string().optional(),
+  }),
 ]);
 
 export function defaultExecutionHost(): z.infer<typeof ExecutionHostSchema> {
