@@ -7,6 +7,10 @@ const REMOTE_PID_PATH = "~/.paseo/paseo.pid";
 const POLL_INTERVAL_MS = 500;
 const POLL_MAX_ATTEMPTS = 20;
 
+/** Extract numeric PID from the JSON PID lock file ({"pid":12345,...}).
+ *  Uses sed to parse — avoids requiring jq on remote hosts. */
+export const EXTRACT_PID_CMD = `cat ${REMOTE_PID_PATH} 2>/dev/null | sed -n 's/.*"pid" *: *\\([0-9][0-9]*\\).*/\\1/p'`;
+
 export function mapUnameToTarget(uname: string): string {
   const mapping: Record<string, string> = {
     "Linux x86_64": "x64-linux",
@@ -37,7 +41,7 @@ export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
 export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
   try {
     const result = await ssh.exec(
-      `pid=$(cat ${REMOTE_PID_PATH} 2>/dev/null) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null`,
+      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null`,
     );
     return result.exitCode === 0;
   } catch {
@@ -47,7 +51,7 @@ export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
 
 export function buildKillScript(): string {
   return [
-    `pid=$(cat ${REMOTE_PID_PATH} 2>/dev/null)`,
+    `pid=$(${EXTRACT_PID_CMD})`,
     `if [ -n "$pid" ]; then`,
     // Verify the process is actually a paseo daemon before killing
     `  if ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon; then`,

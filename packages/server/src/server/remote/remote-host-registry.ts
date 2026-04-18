@@ -40,10 +40,18 @@ export class RemoteHostRegistry {
 
   async remove(hostAlias: string): Promise<void> {
     await this.load();
-    if (!this.cache.delete(hostAlias)) {
+    const existing = this.cache.get(hostAlias);
+    if (!existing) {
       return;
     }
-    await this.enqueuePersist();
+    this.cache.delete(hostAlias);
+    try {
+      await this.enqueuePersist();
+    } catch (error) {
+      // Restore cache entry so state is consistent on persist failure
+      this.cache.set(hostAlias, existing);
+      throw error;
+    }
   }
 
   private async load(): Promise<void> {
