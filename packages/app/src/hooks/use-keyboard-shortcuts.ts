@@ -28,7 +28,7 @@ import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { useKeyboardShortcutOverrides } from "@/hooks/use-keyboard-shortcut-overrides";
 import { isNative } from "@/constants/platform";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
-import { useSessionStore } from "@/stores/session-store";
+import { cycleAgentMode } from "@/keyboard/cycle-agent-mode";
 
 export function useKeyboardShortcuts({
   enabled,
@@ -169,38 +169,6 @@ export function useKeyboardShortcuts({
           return false;
       }
     };
-    const cycleAgentMode = (): boolean => {
-      if (!selectedAgentId || !activeServerId) {
-        return false;
-      }
-      const state = useSessionStore.getState();
-      const serverSession = state.sessions[activeServerId];
-      if (!serverSession) {
-        return false;
-      }
-      const agent = serverSession.agents?.get(selectedAgentId);
-      if (!agent) {
-        return false;
-      }
-      const client = serverSession.client;
-      if (!client) {
-        return false;
-      }
-      const modes = agent.availableModes;
-      if (!modes || modes.length <= 1) {
-        return false;
-      }
-      const currentIndex = modes.findIndex((m) => m.id === agent.currentModeId);
-      const nextIndex = (currentIndex + 1) % modes.length;
-      const nextMode = modes[nextIndex];
-      if (!nextMode) {
-        return false;
-      }
-      void client.setAgentMode(selectedAgentId, nextMode.id).catch((error) => {
-        console.warn("[useKeyboardShortcuts] cycleAgentMode failed", error);
-      });
-      return true;
-    };
     const handleAction = (input: {
       action: string;
       payload: KeyboardShortcutPayload;
@@ -321,7 +289,7 @@ export function useKeyboardShortcuts({
           }
           return true;
         case "agent.mode.cycle":
-          return cycleAgentMode();
+          return cycleAgentMode({ selectedAgentId, activeServerId });
         case "command-center.toggle": {
           const store = useKeyboardShortcutsStore.getState();
           if (!store.commandCenterOpen) {

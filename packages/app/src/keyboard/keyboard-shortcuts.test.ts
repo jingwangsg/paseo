@@ -289,6 +289,12 @@ describe("keyboard-shortcuts", () => {
       preventDefault: false,
       stopPropagation: false,
     },
+    {
+      name: "matches Shift+Tab to cycle agent mode",
+      event: { key: "Tab", code: "Tab", shiftKey: true },
+      context: { commandCenterOpen: false },
+      action: "agent.mode.cycle",
+    },
   ];
 
   it.each(matchingCases)("$name", ({
@@ -363,6 +369,11 @@ describe("keyboard-shortcuts", () => {
       name: "keeps space typing available in message input",
       event: { key: " ", code: "Space" },
       context: { focusScope: "message-input" },
+    },
+    {
+      name: "does not match Shift+Tab when command center is open",
+      event: { key: "Tab", code: "Tab", shiftKey: true },
+      context: { commandCenterOpen: true },
     },
   ];
 
