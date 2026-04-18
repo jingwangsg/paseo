@@ -1201,6 +1201,24 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       });
     });
 
+    const unsubRemoteHostRemoved = client.on("remove_remote_host_response", (message) => {
+      if (message.type !== "remove_remote_host_response") return;
+      if (!message.payload.success) return;
+      // Re-fetch full host list to reconcile after removal
+      client
+        .fetchRemoteHosts()
+        .then(({ hosts }) => {
+          const next = new Map<string, RemoteHostStatusPayload>();
+          for (const h of hosts) {
+            next.set(h.hostAlias, h);
+          }
+          setRemoteHosts(serverId, next);
+        })
+        .catch((err) => {
+          console.error("[Session] Failed to refresh remote hosts after removal:", err);
+        });
+    });
+
     const unsubStatus = client.on("status", (message) => {
       if (message.type !== "status") return;
       const serverInfo = parseServerInfoStatusPayload(message.payload);
@@ -1551,6 +1569,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubAgentTimeline();
       unsubWorkspaceUpdate();
       unsubRemoteHostUpdate();
+      unsubRemoteHostRemoved();
       unsubStatus();
       unsubPermissionRequest();
       unsubPermissionResolved();

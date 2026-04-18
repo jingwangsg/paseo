@@ -68,10 +68,18 @@ export class RemoteHostRegistry {
 
   private async persist(): Promise<void> {
     const records = Array.from(this.cache.values());
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
-    await fs.writeFile(tempPath, JSON.stringify(records, null, 2), "utf8");
-    await fs.rename(tempPath, this.filePath);
+    try {
+      await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+      const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+      await fs.writeFile(tempPath, JSON.stringify(records, null, 2), "utf8");
+      await fs.rename(tempPath, this.filePath);
+    } catch (error) {
+      this.logger.error(
+        { err: error, filePath: this.filePath },
+        "Failed to persist hosts registry",
+      );
+      throw error;
+    }
   }
 
   private async enqueuePersist(): Promise<void> {
