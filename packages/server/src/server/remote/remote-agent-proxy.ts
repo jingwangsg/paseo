@@ -62,16 +62,19 @@ export async function createRemoteAgentProxy(options: {
     ws.on("open", () => {
       logger.info({ hostAlias, tunnelPort }, "Remote agent proxy connected");
 
-      // Send hello message to establish session on remote daemon
+      // Send hello message to establish session on remote daemon.
+      // Must include clientType and protocolVersion per WSHelloMessageSchema.
       ws.send(
         JSON.stringify({
           type: "hello",
           clientId: `proxy-${hostAlias}-${Date.now()}`,
-          version: "0.1.0",
+          clientType: "cli",
+          protocolVersion: 1,
+          appVersion: "0.1.59",
         }),
       );
 
-      resolve({
+      const proxy: RemoteAgentProxy = {
         sendSessionMessage(msg) {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "session", message: msg }));
@@ -92,7 +95,10 @@ export async function createRemoteAgentProxy(options: {
         get hostAlias() {
           return hostAlias;
         },
-      });
+      };
+
+      // Wait briefly for hello to be processed before allowing sends
+      setTimeout(() => resolve(proxy), 500);
     });
 
     ws.on("message", (data) => {
