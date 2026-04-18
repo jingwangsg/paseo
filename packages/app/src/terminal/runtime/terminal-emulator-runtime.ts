@@ -368,6 +368,7 @@ export class TerminalEmulatorRuntime {
     });
     resizeObserver.observe(input.root);
     resizeObserver.observe(input.host);
+    resizeObserver.observe(document.documentElement);
 
     const windowResizeHandler = () => fitAndEmitResize(false);
     window.addEventListener("resize", windowResizeHandler);
