@@ -1,11 +1,13 @@
+import { Check } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import type { Theme } from "@/styles/theme";
 import { createMarkdownStyles } from "@/styles/markdown-styles";
-import { getMarkdownListMarker } from "@/utils/markdown-list";
+import { getFirstTextContent, getMarkdownListMarker } from "@/utils/markdown-list";
 
-function createPlanMarkdownRules() {
+function createPlanMarkdownRules(theme: Theme) {
   return {
     text: (
       node: any,
@@ -73,6 +75,32 @@ function createPlanMarkdownRules() {
       </View>
     ),
     list_item: (node: any, children: ReactNode[], parent: any, styles: any) => {
+      const isTaskItem =
+        node.attributes?.class === "task-list-item" ||
+        (typeof node.sourceInfo === "string" && /^\[[ x]\]/.test(node.sourceInfo));
+
+      if (isTaskItem) {
+        const firstChildContent = getFirstTextContent(node);
+        const isChecked =
+          firstChildContent?.includes("[x]") ||
+          node.attributes?.checked === true ||
+          node.attributes?.checked === "true";
+
+        return (
+          <View key={node.key} style={styles.list_item}>
+            <View
+              style={[
+                styles.task_list_item_checkbox,
+                isChecked && styles.task_list_item_checkbox_checked,
+              ]}
+            >
+              {isChecked && <Check size={12} color={theme.colors.background} strokeWidth={3} />}
+            </View>
+            <View style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>{children}</View>
+          </View>
+        );
+      }
+
       const { isOrdered, marker } = getMarkdownListMarker(node, parent);
       const iconStyle = isOrdered ? styles.ordered_list_icon : styles.bullet_list_icon;
       const contentStyle = isOrdered ? styles.ordered_list_content : styles.bullet_list_content;
@@ -110,7 +138,7 @@ export function PlanCard({
 }) {
   const { theme } = useUnistyles();
   const markdownStyles = createMarkdownStyles(theme);
-  const markdownRules = createPlanMarkdownRules();
+  const markdownRules = createPlanMarkdownRules(theme);
 
   return (
     <View

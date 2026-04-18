@@ -56,7 +56,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: theme.fontSize["3xl"],
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
+      marginTop: theme.spacing[8],
       marginBottom: theme.spacing[3],
       lineHeight: 32,
       borderBottomWidth: 1,
@@ -69,7 +69,7 @@ export function createMarkdownStyles(theme: Theme) {
       fontSize: theme.fontSize["2xl"],
       fontWeight: theme.fontWeight.bold,
       color: theme.colors.foreground,
-      marginTop: theme.spacing[6],
+      marginTop: theme.spacing[8],
       marginBottom: theme.spacing[3],
       lineHeight: 28,
       borderBottomWidth: 1,
@@ -125,7 +125,7 @@ export function createMarkdownStyles(theme: Theme) {
 
     strong: {
       ...webSelectableTextStyle,
-      fontWeight: theme.fontWeight.medium,
+      fontWeight: theme.fontWeight.semibold,
     },
 
     em: {
@@ -165,10 +165,11 @@ export function createMarkdownStyles(theme: Theme) {
       ...webSelectableTextStyle,
       backgroundColor: theme.colors.surface2,
       color: theme.colors.foreground,
-      paddingHorizontal: theme.spacing[1],
-      paddingVertical: 2,
+      paddingHorizontal: theme.spacing[2],
+      paddingVertical: 3,
       borderRadius: theme.borderRadius.md,
-      borderWidth: 0,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
       fontFamily: Fonts.mono,
       fontSize: theme.fontSize.sm,
     },
@@ -210,6 +211,7 @@ export function createMarkdownStyles(theme: Theme) {
       borderColor: theme.colors.border,
       borderRadius: theme.borderRadius.md,
       marginVertical: theme.spacing[3],
+      overflow: "hidden" as const,
     },
 
     thead: {
@@ -270,6 +272,23 @@ export function createMarkdownStyles(theme: Theme) {
       flexShrink: 1,
     },
 
+    task_list_item_checkbox: {
+      width: 18,
+      height: 18,
+      borderRadius: theme.borderRadius.base,
+      borderWidth: 2,
+      borderColor: theme.colors.foregroundMuted,
+      marginRight: theme.spacing[2],
+      marginTop: 2,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+
+    task_list_item_checkbox_checked: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+
     bullet_list_content: {
       flex: 1,
       flexShrink: 1,
@@ -308,8 +327,9 @@ export function createMarkdownStyles(theme: Theme) {
       borderLeftColor: theme.colors.primary,
       paddingHorizontal: theme.spacing[4],
       paddingVertical: theme.spacing[3],
-      marginVertical: theme.spacing[3],
+      marginVertical: theme.spacing[4],
       borderRadius: theme.borderRadius.md,
+      fontStyle: "italic" as const,
     },
 
     // =========================================================================
@@ -317,9 +337,9 @@ export function createMarkdownStyles(theme: Theme) {
     // =========================================================================
 
     hr: {
-      backgroundColor: theme.colors.border,
-      height: 1,
       marginVertical: theme.spacing[6],
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
     },
 
     // =========================================================================
@@ -403,6 +423,12 @@ export function createCompactMarkdownStyles(theme: Theme) {
       ...baseStyles.fence,
       fontSize: theme.fontSize.xs,
       padding: theme.spacing[2],
+    },
+
+    task_list_item_checkbox: {
+      ...baseStyles.task_list_item_checkbox,
+      width: 15,
+      height: 15,
     },
   };
 }

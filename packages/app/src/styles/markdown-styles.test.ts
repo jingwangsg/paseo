@@ -69,4 +69,39 @@ describe("createMarkdownStyles", () => {
       userSelect: "text",
     });
   });
+
+  it("strong text uses semibold weight for visual distinction", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.strong.fontWeight).toBe(darkTheme.fontWeight.semibold);
+  });
+
+  it("inline code has visible padding and border for contrast", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.code_inline).toMatchObject({
+      paddingVertical: 3,
+      paddingHorizontal: darkTheme.spacing[2],
+      borderWidth: 1,
+    });
+  });
+
+  it("hr has centered text alignment and transparent background", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.hr).toMatchObject({
+      marginVertical: darkTheme.spacing[6],
+    });
+    expect((styles.hr as any).backgroundColor).toBeUndefined();
+    expect((styles.hr as any).height).toBeUndefined();
+  });
+
+  it("headings have proportional top margins for visual rhythm", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.heading1.marginTop).toBeGreaterThan(styles.heading3.marginTop);
+    expect(styles.heading3.marginTop).toBeGreaterThan(styles.heading5.marginTop);
+    expect(styles.blockquote.marginVertical).toBeLessThan(styles.heading1.marginTop);
+  });
+
+  it("blockquote has italic text style", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.blockquote.fontStyle).toBe("italic");
+  });
 });

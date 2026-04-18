@@ -4,6 +4,7 @@ import {
   Image,
   Pressable,
   ActivityIndicator,
+  ScrollView,
   type LayoutChangeEvent,
   StyleProp,
   ViewStyle,
@@ -70,7 +71,8 @@ import {
   parseInlinePathToken,
   type InlinePathTarget,
 } from "@/utils/inline-path";
-import { getMarkdownListMarker } from "@/utils/markdown-list";
+import { getFirstTextContent, getMarkdownListMarker } from "@/utils/markdown-list";
+import taskLists from "markdown-it-task-lists";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { markScrollInvestigationEvent } from "@/utils/scroll-jank-investigation";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
@@ -83,6 +85,7 @@ export type { InlinePathTarget } from "@/utils/inline-path";
 import { PlanCard } from "./plan-card";
 import { useToolCallSheet } from "./tool-call-sheet";
 import { ToolCallDetailsContent } from "./tool-call-details";
+import { MarkdownCollapsible } from "./markdown-collapsible";
 import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
 import type { DaemonClient } from "@server/client/daemon-client";
 import { isWeb, isNative } from "@/constants/platform";
@@ -678,6 +681,17 @@ function MarkdownLink({
   );
 }
 
+function parseDetailsBlock(html: string): { summary: string; content: string } | null {
+  const detailsMatch = html.match(
+    /<details[^>]*>\s*<summary[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/i,
+  );
+  if (!detailsMatch) return null;
+  return {
+    summary: detailsMatch[1].trim(),
+    content: detailsMatch[2].trim(),
+  };
+}
+
 function getInlineCodeAutoLinkUrl(
   markdownParser: ReturnType<typeof MarkdownIt>,
   content: string,
@@ -715,6 +729,19 @@ function nodeHasParentType(parent: unknown, type: string): boolean {
     "type" in parent &&
     (parent as { type?: string }).type === type
   );
+}
+
+const BLOCKQUOTE_BORDER_COLORS = ["primary", "accent", "foregroundMuted"] as const;
+
+function getBlockquoteDepth(parent: any): number {
+  if (!Array.isArray(parent)) return 0;
+  let depth = 0;
+  for (const ancestor of parent) {
+    if (ancestor?.type === "blockquote") {
+      depth++;
+    }
+  }
+  return depth;
 }
 
 const turnCopyButtonStylesheet = StyleSheet.create((theme) => ({
@@ -968,7 +995,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   const markdownStyles = useMemo(() => createMarkdownStyles(theme), [rt.themeName]);
 
   const markdownParser = useMemo(() => {
-    const parser = MarkdownIt({ typographer: true, linkify: true });
+    const parser = MarkdownIt({ typographer: true, linkify: true, html: true });
+    parser.use(taskLists, { enabled: true });
     const defaultValidateLink = parser.validateLink.bind(parser);
     parser.validateLink = (url: string) => {
       if (url.trim().toLowerCase().startsWith("file://")) {
@@ -1100,6 +1128,34 @@ export const AssistantMessage = memo(function AssistantMessage({
         </View>
       ),
       list_item: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        // Detect task list items (from markdown-it-task-lists plugin)
+        const isTaskItem =
+          node.attributes?.class === "task-list-item" ||
+          (typeof node.sourceInfo === "string" && /^\[[ x]\]/.test(node.sourceInfo));
+
+        if (isTaskItem) {
+          const firstChildContent = getFirstTextContent(node);
+          const isChecked =
+            firstChildContent?.includes("[x]") ||
+            node.attributes?.checked === true ||
+            node.attributes?.checked === "true";
+
+          return (
+            <View key={node.key} style={styles.list_item}>
+              <View
+                style={[
+                  styles.task_list_item_checkbox,
+                  isChecked && styles.task_list_item_checkbox_checked,
+                ]}
+              >
+                {isChecked && <Check size={12} color={theme.colors.background} strokeWidth={3} />}
+              </View>
+              <View style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>{children}</View>
+            </View>
+          );
+        }
+
+        // Normal list item
         const { isOrdered, marker } = getMarkdownListMarker(node, parent);
         const iconStyle = isOrdered ? styles.ordered_list_icon : styles.bullet_list_icon;
         const contentStyle = isOrdered ? styles.ordered_list_content : styles.bullet_list_content;
@@ -1116,6 +1172,73 @@ export const AssistantMessage = memo(function AssistantMessage({
           {children}
         </View>
       ),
+      hr: (node: any, _children: ReactNode[], _parent: any, styles: any) => (
+        <View key={node.key} style={styles.hr}>
+          <Text
+            style={{
+              color: theme.colors.foregroundMuted,
+              fontSize: theme.fontSize.base,
+              letterSpacing: 8,
+            }}
+          >
+            ···
+          </Text>
+        </View>
+      ),
+      blockquote: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        const depth = getBlockquoteDepth(parent);
+        const colorKey =
+          BLOCKQUOTE_BORDER_COLORS[Math.min(depth, BLOCKQUOTE_BORDER_COLORS.length - 1)];
+        const borderColor = theme.colors[colorKey];
+        const isNested = depth > 0;
+
+        return (
+          <View
+            key={node.key}
+            style={[
+              styles.blockquote,
+              {
+                borderLeftColor: borderColor,
+                ...(isNested && {
+                  backgroundColor: "transparent",
+                  marginVertical: theme.spacing[1],
+                  paddingVertical: theme.spacing[2],
+                }),
+              },
+            ]}
+          >
+            {children}
+          </View>
+        );
+      },
+      table: (node: any, children: ReactNode[], _parent: any, styles: any) => (
+        <ScrollView
+          key={node.key}
+          horizontal
+          showsHorizontalScrollIndicator={true}
+          style={styles.table}
+        >
+          <View style={{ minWidth: "100%" }}>{children}</View>
+        </ScrollView>
+      ),
+      tr: (node: any, children: ReactNode[], parent: any, styles: any) => {
+        const isEvenRow = typeof node.index === "number" && node.index % 2 === 1;
+        const isInThead = Array.isArray(parent)
+          ? parent.some((ancestor: any) => ancestor?.type === "thead")
+          : false;
+
+        return (
+          <View
+            key={node.key}
+            style={[
+              styles.tr,
+              !isInThead && isEvenRow && { backgroundColor: theme.colors.surface1 },
+            ]}
+          >
+            {children}
+          </View>
+        );
+      },
       link: (node: any, children: ReactNode[], _parent: any, styles: any) => (
         <MarkdownLink
           key={node.key}
@@ -1154,8 +1277,41 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         );
       },
+      html_block: (node: any, _children: ReactNode[], _parent: any, styles: any) => {
+        const content = node.content ?? "";
+        const details = parseDetailsBlock(content);
+        if (details) {
+          return (
+            <MarkdownCollapsible key={node.key} summary={details.summary} theme={theme}>
+              <MemoizedMarkdownBlock
+                text={details.content}
+                styles={markdownStyles}
+                rules={markdownRules}
+                parser={markdownParser}
+                onLinkPress={handleLinkPress}
+              />
+            </MarkdownCollapsible>
+          );
+        }
+
+        // For other HTML blocks, render as plain text (safe default)
+        return (
+          <Text key={node.key} style={styles.text}>
+            {content}
+          </Text>
+        );
+      },
     };
-  }, [client, handleLinkPress, markdownParser, onInlinePathPress, serverId, workspaceRoot]);
+  }, [
+    client,
+    handleLinkPress,
+    markdownParser,
+    markdownStyles,
+    onInlinePathPress,
+    serverId,
+    theme,
+    workspaceRoot,
+  ]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(message), [message]);
 
