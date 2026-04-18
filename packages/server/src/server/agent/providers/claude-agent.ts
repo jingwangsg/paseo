@@ -2,6 +2,7 @@ import { type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { promises } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -67,6 +68,7 @@ import type {
   AgentUsage,
   AgentRuntimeInfo,
   ListModelsOptions,
+  ListModesOptions,
   ListPersistedAgentsOptions,
   McpServerConfig,
   PersistedAgentDescriptor,
@@ -78,6 +80,8 @@ import { getOrchestratorModeInstructions } from "../orchestrator-instructions.js
 
 const fsPromises = promises;
 const CLAUDE_SETTING_SOURCES: NonNullable<Options["settingSources"]> = ["user", "project"];
+const require = createRequire(import.meta.url);
+const CLAUDE_AUTO_MINIMUM_VERSION = [2, 1, 83] as const;
 
 type TurnState = "idle" | "foreground" | "autonomous";
 
@@ -129,7 +133,15 @@ const DEFAULT_MODES: AgentMode[] = [
   },
 ];
 
-const VALID_CLAUDE_MODES = new Set(DEFAULT_MODES.map((mode) => mode.id));
+const CLAUDE_AUTO_MODE: AgentMode = {
+  id: "auto",
+  label: "Auto Mode",
+  description: "Uses Claude's classifier-backed auto-approval flow for longer runs.",
+};
+
+const ALL_CLAUDE_MODES: AgentMode[] = [...DEFAULT_MODES, CLAUDE_AUTO_MODE];
+
+const VALID_CLAUDE_MODES = new Set(ALL_CLAUDE_MODES.map((mode) => mode.id));
 
 const REWIND_COMMAND_NAME = "rewind";
 const REWIND_COMMAND: AgentSlashCommand = {
@@ -569,6 +581,204 @@ function isPermissionMode(value: string | undefined): value is PermissionMode {
   return typeof value === "string" && VALID_CLAUDE_MODES.has(value);
 }
 
+function isClaudeImageMimeType(
+  mimeType: string,
+): mimeType is "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
+  return (
+    mimeType === "image/jpeg" ||
+    mimeType === "image/png" ||
+    mimeType === "image/gif" ||
+    mimeType === "image/webp"
+  );
+}
+
+function parseClaudeVersionNumbers(
+  version: string | null | undefined,
+): [number, number, number] | null {
+  if (typeof version !== "string") {
+    return null;
+  }
+
+  const match = version.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return null;
+  }
+
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function isVersionAtLeast(
+  version: [number, number, number] | null,
+  minimum: readonly [number, number, number],
+): boolean {
+  if (!version) {
+    return false;
+  }
+
+  for (let index = 0; index < minimum.length; index += 1) {
+    const current = version[index] ?? 0;
+    const required = minimum[index] ?? 0;
+    if (current > required) return true;
+    if (current < required) return false;
+  }
+
+  return true;
+}
+
+function supportsClaudeAutoMode(version: string | null | undefined): boolean {
+  return isVersionAtLeast(parseClaudeVersionNumbers(version), CLAUDE_AUTO_MINIMUM_VERSION);
+}
+
+function resolveBundledClaudeCodeVersion(): string | null {
+  try {
+    const sdkEntryPath = require.resolve("@anthropic-ai/claude-agent-sdk");
+    const sdkPackagePath = path.join(path.dirname(sdkEntryPath), "package.json");
+    const sdkPackageJson = JSON.parse(fs.readFileSync(sdkPackagePath, "utf8")) as {
+      claudeCodeVersion?: unknown;
+      version?: unknown;
+    };
+
+    if (typeof sdkPackageJson.claudeCodeVersion === "string") {
+      return sdkPackageJson.claudeCodeVersion;
+    }
+    if (typeof sdkPackageJson.version === "string") {
+      return sdkPackageJson.version;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildClaudeModes(options: { includeAuto: boolean }): AgentMode[] {
+  return options.includeAuto ? ALL_CLAUDE_MODES : DEFAULT_MODES;
+}
+
+function resolveEffectiveClaudeEnv(
+  runtimeSettings?: ProviderRuntimeSettings,
+  launchEnv?: Record<string, string>,
+  extraClaudeEnv?: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  const baseEnv = extraClaudeEnv ?? process.env;
+  return {
+    ...applyProviderEnv(baseEnv, runtimeSettings),
+    ...(launchEnv ?? {}),
+  };
+}
+
+function resolveClaudeConfigDirFromEnv(effectiveEnv: Record<string, string | undefined>): string {
+  if (
+    typeof effectiveEnv.CLAUDE_CONFIG_DIR === "string" &&
+    effectiveEnv.CLAUDE_CONFIG_DIR.length > 0
+  ) {
+    return effectiveEnv.CLAUDE_CONFIG_DIR;
+  }
+
+  const homeDir =
+    typeof effectiveEnv.HOME === "string" && effectiveEnv.HOME.length > 0
+      ? effectiveEnv.HOME
+      : os.homedir();
+  return path.join(homeDir, ".claude");
+}
+
+function resolveClaudeSettingSources(extraClaude?: Partial<ClaudeOptions>): string[] {
+  if (!Array.isArray(extraClaude?.settingSources)) {
+    return [...CLAUDE_SETTING_SOURCES];
+  }
+
+  return extraClaude.settingSources.filter(
+    (source): source is "user" | "project" | "local" =>
+      source === "user" || source === "project" || source === "local",
+  );
+}
+
+async function readClaudeSettingsFile(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await fsPromises.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function isClaudeAutoModeDisabledBySettings(
+  runtimeSettings?: ProviderRuntimeSettings,
+  cwd?: string,
+  launchEnv?: Record<string, string>,
+  extraClaude?: Partial<ClaudeOptions>,
+): Promise<boolean> {
+  const settingSources = resolveClaudeSettingSources(extraClaude);
+  const effectiveEnv = resolveEffectiveClaudeEnv(runtimeSettings, launchEnv, extraClaude?.env);
+
+  if (settingSources.includes("user")) {
+    const userSettings = await readClaudeSettingsFile(
+      path.join(resolveClaudeConfigDirFromEnv(effectiveEnv), "settings.json"),
+    );
+    if (userSettings?.disableAutoMode === "disable") {
+      return true;
+    }
+  }
+
+  if (!cwd) {
+    return false;
+  }
+
+  if (settingSources.includes("local")) {
+    const localSettings = await readClaudeSettingsFile(
+      path.join(cwd, ".claude", "settings.local.json"),
+    );
+    if (localSettings?.disableAutoMode === "disable") {
+      return true;
+    }
+  }
+
+  if (!settingSources.includes("project")) {
+    return false;
+  }
+
+  const projectSettings = await readClaudeSettingsFile(path.join(cwd, ".claude", "settings.json"));
+  return projectSettings?.disableAutoMode === "disable";
+}
+
+async function isClaudeAutoModeAvailable(
+  cwd?: string,
+  runtimeSettings?: ProviderRuntimeSettings,
+  launchEnv?: Record<string, string>,
+  extraClaude?: Partial<ClaudeOptions>,
+): Promise<boolean> {
+  const version = await resolveClaudeVersion(cwd, runtimeSettings, launchEnv, extraClaude);
+  if (!supportsClaudeAutoMode(version)) {
+    return false;
+  }
+
+  return !(await isClaudeAutoModeDisabledBySettings(runtimeSettings, cwd, launchEnv, extraClaude));
+}
+
+async function assertClaudeModeSupported(
+  modeId: string | null | undefined,
+  cwd?: string,
+  runtimeSettings?: ProviderRuntimeSettings,
+  launchEnv?: Record<string, string>,
+  extraClaude?: Partial<ClaudeOptions>,
+): Promise<void> {
+  if (modeId !== "auto") {
+    return;
+  }
+
+  if (await isClaudeAutoModeAvailable(cwd, runtimeSettings, launchEnv, extraClaude)) {
+    return;
+  }
+
+  throw new Error(
+    "Claude auto mode requires a Claude runtime that supports auto mode (Claude Code 2.1.83 or later).",
+  );
+}
+
 function coerceSessionMetadata(metadata: AgentMetadata | undefined): Partial<AgentSessionConfig> {
   if (!isMetadata(metadata)) {
     return {};
@@ -682,7 +892,7 @@ function resolvePermissionKind(
 }
 
 function getClaudeModeLabel(modeId: PermissionMode): string {
-  return DEFAULT_MODES.find((mode) => mode.id === modeId)?.label ?? modeId;
+  return ALL_CLAUDE_MODES.find((mode) => mode.id === modeId)?.label ?? modeId;
 }
 
 function buildClaudePlanPermissionActions(
@@ -777,7 +987,7 @@ class TimelineAssembler {
     runId: string | null,
     messageIdHint: string | null,
   ): AgentTimelineItem[] {
-    const event = message.event as Record<string, unknown>;
+    const event = message.event as unknown as Record<string, unknown>;
     const eventType = readTrimmedString(event.type);
     const streamEventMessageId = this.readMessageIdFromStreamEvent(event) ?? messageIdHint;
 
@@ -1075,6 +1285,13 @@ export class ClaudeAgentClient implements AgentClient {
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     const claudeConfig = this.assertConfig(config);
+    await assertClaudeModeSupported(
+      claudeConfig.modeId,
+      claudeConfig.cwd,
+      this.runtimeSettings,
+      launchContext?.env,
+      claudeConfig.extra?.claude,
+    );
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -1096,6 +1313,13 @@ export class ClaudeAgentClient implements AgentClient {
     }
     const mergedConfig: AgentSessionConfig = { ...merged, provider: "claude", cwd: merged.cwd };
     const claudeConfig = this.assertConfig(mergedConfig);
+    await assertClaudeModeSupported(
+      claudeConfig.modeId,
+      claudeConfig.cwd,
+      this.runtimeSettings,
+      launchContext?.env,
+      claudeConfig.extra?.claude,
+    );
     return new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
@@ -1145,11 +1369,17 @@ export class ClaudeAgentClient implements AgentClient {
     return true;
   }
 
+  async listModes(options?: ListModesOptions): Promise<AgentMode[]> {
+    return buildClaudeModes({
+      includeAuto: await isClaudeAutoModeAvailable(options?.cwd, this.runtimeSettings),
+    });
+  }
+
   async getDiagnostic(): Promise<{ diagnostic: string }> {
     try {
       const resolvedBinary = (await findExecutable("claude")) ?? "not found";
       const available = await this.isAvailable();
-      const version = await resolveClaudeVersion(this.runtimeSettings);
+      const version = await resolveClaudeVersion(undefined, this.runtimeSettings);
       const auth = available ? await resolveClaudeAuth(this.runtimeSettings) : null;
       let modelsValue = "Not checked";
       let status = formatDiagnosticStatus(available);
@@ -1192,27 +1422,38 @@ export class ClaudeAgentClient implements AgentClient {
 }
 
 async function resolveClaudeVersion(
+  cwd?: string,
   runtimeSettings?: ProviderRuntimeSettings,
+  launchEnv?: Record<string, string>,
+  extraClaude?: Partial<ClaudeOptions>,
 ): Promise<string | null> {
   const command = runtimeSettings?.command;
+  const effectiveEnv = resolveEffectiveClaudeEnv(runtimeSettings, launchEnv, extraClaude?.env);
+  const execOptions = {
+    timeout: 5_000,
+    ...(cwd ? { cwd } : {}),
+    env: effectiveEnv,
+  };
 
   try {
     if (command?.mode === "replace") {
       const { stdout } = await execCommand(
         command.argv[0]!,
         [...command.argv.slice(1), "--version"],
-        { timeout: 5_000 },
+        execOptions,
       );
       return stdout.trim() || null;
     }
 
-    const executable = await findExecutable("claude");
-    if (!executable) {
-      return null;
+    if (typeof extraClaude?.pathToClaudeCodeExecutable === "string") {
+      const { stdout } = await execCommand(
+        extraClaude.pathToClaudeCodeExecutable,
+        ["--version"],
+        execOptions,
+      );
+      return stdout.trim() || null;
     }
-
-    const { stdout } = await execCommand(executable, ["--version"], { timeout: 5_000 });
-    return stdout.trim() || null;
+    return resolveBundledClaudeCodeVersion();
   } catch {
     return null;
   }
@@ -1650,6 +1891,14 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   async getAvailableModes(): Promise<AgentMode[]> {
+    this.availableModes = buildClaudeModes({
+      includeAuto: await isClaudeAutoModeAvailable(
+        this.config.cwd,
+        this.runtimeSettings,
+        this.launchEnv,
+        this.config.extra?.claude,
+      ),
+    });
     return this.availableModes;
   }
 
@@ -1667,9 +1916,24 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     const normalized = isPermissionMode(modeId) ? modeId : "default";
+    await assertClaudeModeSupported(
+      normalized,
+      this.config.cwd,
+      this.runtimeSettings,
+      this.launchEnv,
+      this.config.extra?.claude,
+    );
     const previousMode = this.currentMode;
     const query = await this.ensureQuery();
     await query.setPermissionMode(normalized);
+    this.availableModes = buildClaudeModes({
+      includeAuto: await isClaudeAutoModeAvailable(
+        this.config.cwd,
+        this.runtimeSettings,
+        this.launchEnv,
+        this.config.extra?.claude,
+      ),
+    });
     if (normalized === "plan") {
       if (previousMode !== "plan") {
         this.planResumeMode = previousMode;
@@ -2158,7 +2422,6 @@ class ClaudeAgentSession implements AgentSession {
       allowDangerouslySkipPermissions: true,
       agents: this.defaults?.agents,
       canUseTool: this.handlePermissionRequest,
-      ...(claudeBinary ? { pathToClaudeCodeExecutable: claudeBinary } : {}),
       // Use Claude Code preset system prompt and load CLAUDE.md files
       // Append provider-agnostic system prompt and orchestrator instructions for agents.
       systemPrompt: {
@@ -2223,15 +2486,15 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private toSdkUserMessage(prompt: AgentPromptInput): SDKUserMessage {
-    const content: Array<
-      | { type: "text"; text: string }
-      | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-    > = [];
+    const content: Exclude<SDKUserMessage["message"]["content"], string> = [];
     if (Array.isArray(prompt)) {
       for (const chunk of prompt) {
         if (chunk.type === "text") {
           content.push({ type: "text", text: chunk.text });
         } else if (chunk.type === "image") {
+          if (!isClaudeImageMimeType(chunk.mimeType)) {
+            throw new Error(`Unsupported image mime type for Claude prompt: ${chunk.mimeType}`);
+          }
           content.push({
             type: "image",
             source: {

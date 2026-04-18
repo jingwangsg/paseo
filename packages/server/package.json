@@ -62,7 +62,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
     "@ai-sdk/openai": "2.0.52",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.11",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.114",
     "@deepgram/sdk": "^3.4.0",
     "@getpaseo/highlight": "0.1.59",
     "@getpaseo/relay": "0.1.59",

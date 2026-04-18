@@ -22,6 +22,7 @@ const mockState = vi.hoisted(() => {
     },
     isCommandAvailable: vi.fn(async (_command: string) => false),
     runtimeModels: new Map<string, AgentModelDefinition[]>(),
+    runtimeModes: new Map<string, Array<{ id: string; label: string }>>(),
     reset() {
       for (const key of Object.keys(this.constructorArgs) as Array<
         keyof typeof this.constructorArgs
@@ -31,6 +32,7 @@ const mockState = vi.hoisted(() => {
       this.isCommandAvailable.mockReset();
       this.isCommandAvailable.mockImplementation(async (_command: string) => false);
       this.runtimeModels.clear();
+      this.runtimeModes.clear();
     },
   };
 });
@@ -72,7 +74,7 @@ vi.mock("./providers/claude-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -118,7 +120,7 @@ vi.mock("./providers/codex-app-server-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -166,7 +168,7 @@ vi.mock("./providers/copilot-acp-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -212,7 +214,7 @@ vi.mock("./providers/opencode-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -259,7 +261,7 @@ vi.mock("./providers/pi-acp-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -308,7 +310,7 @@ vi.mock("./providers/generic-acp-agent.js", () => ({
     }
 
     async listModes(): Promise<[]> {
-      return [];
+      return (mockState.runtimeModes.get(this.provider) ?? []) as [];
     }
 
     async isAvailable(): Promise<boolean> {
@@ -471,6 +473,47 @@ describe("buildProviderRegistry", () => {
 
     await expect(registry.claude.createClient(logger).isAvailable()).resolves.toBe(true);
     expect(mockState.isCommandAvailable).toHaveBeenCalledWith("claude");
+  });
+
+  test("runtime-reported Claude auto mode gets built-in visuals without static manifest exposure", async () => {
+    mockState.runtimeModes.set("claude", [{ id: "auto", label: "Auto Mode" }]);
+
+    const registry = buildProviderRegistry(logger);
+    const modes = await registry.claude.fetchModes();
+
+    expect(modes).toEqual([
+      {
+        id: "auto",
+        label: "Auto Mode",
+        icon: "ShieldAlert",
+        colorTier: "moderate",
+      },
+    ]);
+    expect(registry.claude.modes.map((mode) => mode.id)).not.toContain("auto");
+  });
+
+  test('providers extending "claude" inherit runtime auto-mode visuals', async () => {
+    mockState.runtimeModes.set("claude", [{ id: "auto", label: "Auto Mode" }]);
+
+    const registry = buildProviderRegistry(logger, {
+      providerOverrides: {
+        zai: {
+          extends: "claude",
+          label: "ZAI",
+        },
+      },
+    });
+
+    const modes = await registry.zai.fetchModes();
+
+    expect(modes).toEqual([
+      {
+        id: "auto",
+        label: "Auto Mode",
+        icon: "ShieldAlert",
+        colorTier: "moderate",
+      },
+    ]);
   });
 
   test("disallowedTools flows through to runtime settings", () => {

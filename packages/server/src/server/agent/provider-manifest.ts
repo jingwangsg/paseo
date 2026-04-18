@@ -11,6 +11,41 @@ export interface AgentModeVisuals {
 
 export type AgentProviderModeDefinition = Omit<AgentMode, "icon" | "colorTier"> & AgentModeVisuals;
 
+const BUILTIN_MODE_VISUALS: Record<string, Record<string, AgentModeVisuals>> = {
+  claude: {
+    default: {
+      icon: "ShieldCheck",
+      colorTier: "safe",
+    },
+    acceptEdits: {
+      icon: "ShieldAlert",
+      colorTier: "moderate",
+    },
+    plan: {
+      icon: "ShieldCheck",
+      colorTier: "planning",
+    },
+    auto: {
+      icon: "ShieldAlert",
+      colorTier: "moderate",
+    },
+    bypassPermissions: {
+      icon: "ShieldAlert",
+      colorTier: "dangerous",
+    },
+  },
+  codex: {
+    auto: {
+      icon: "ShieldAlert",
+      colorTier: "moderate",
+    },
+    "full-access": {
+      icon: "ShieldAlert",
+      colorTier: "dangerous",
+    },
+  },
+};
+
 // TODO: `modes` should not be static. Providers (especially ACP) report their
 // own modes at runtime via session/new. We should fetch modes from the provider
 // as source of truth and enrich with UI metadata (icons, colorTier) on top.
@@ -32,29 +67,25 @@ const CLAUDE_MODES: AgentProviderModeDefinition[] = [
     id: "default",
     label: "Always Ask",
     description: "Prompts for permission the first time a tool is used",
-    icon: "ShieldCheck",
-    colorTier: "safe",
+    ...BUILTIN_MODE_VISUALS.claude.default,
   },
   {
     id: "acceptEdits",
     label: "Accept File Edits",
     description: "Automatically approves edit-focused tools without prompting",
-    icon: "ShieldAlert",
-    colorTier: "moderate",
+    ...BUILTIN_MODE_VISUALS.claude.acceptEdits,
   },
   {
     id: "plan",
     label: "Plan Mode",
     description: "Analyze the codebase without executing tools or edits",
-    icon: "ShieldCheck",
-    colorTier: "planning",
+    ...BUILTIN_MODE_VISUALS.claude.plan,
   },
   {
     id: "bypassPermissions",
     label: "Bypass",
     description: "Skip all permission prompts (use with caution)",
-    icon: "ShieldAlert",
-    colorTier: "dangerous",
+    ...BUILTIN_MODE_VISUALS.claude.bypassPermissions,
   },
 ];
 
@@ -63,15 +94,13 @@ const CODEX_MODES: AgentProviderModeDefinition[] = [
     id: "auto",
     label: "Default Permissions",
     description: "Edit files and run commands with Codex's default approval flow.",
-    icon: "ShieldAlert",
-    colorTier: "moderate",
+    ...BUILTIN_MODE_VISUALS.codex.auto,
   },
   {
     id: "full-access",
     label: "Full Access",
     description: "Edit files, run commands, and access the network without additional prompts.",
-    icon: "ShieldAlert",
-    colorTier: "dangerous",
+    ...BUILTIN_MODE_VISUALS.codex["full-access"],
   },
 ];
 
@@ -132,6 +161,9 @@ export function getModeVisuals(
 ): AgentModeVisuals | undefined {
   const definition = definitions.find((entry) => entry.id === provider);
   const mode = definition?.modes.find((m) => m.id === modeId);
-  if (!mode) return undefined;
-  return { icon: mode.icon, colorTier: mode.colorTier };
+  if (mode) {
+    return { icon: mode.icon, colorTier: mode.colorTier };
+  }
+
+  return BUILTIN_MODE_VISUALS[provider]?.[modeId];
 }
