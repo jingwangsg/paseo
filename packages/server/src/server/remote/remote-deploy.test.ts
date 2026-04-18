@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { mapUnameToTarget, remoteStartCommand, REMOTE_DAEMON_PORT } from "./remote-deploy.js";
+import {
+  mapUnameToTarget,
+  remoteStartCommand,
+  buildKillScript,
+  REMOTE_DAEMON_PORT,
+} from "./remote-deploy.js";
 
 describe("remote deploy", () => {
   test("mapUnameToTarget maps Linux x86_64", () => {
@@ -28,5 +33,16 @@ describe("remote deploy", () => {
     expect(cmd).toContain("--daemon");
     expect(cmd).toContain("--no-host-scan");
     expect(cmd).toContain(String(REMOTE_DAEMON_PORT));
+  });
+
+  test("buildKillScript verifies process name before killing", () => {
+    const script = buildKillScript();
+    expect(script).toContain("paseo-daemon");
+    expect(script).toContain("ps -p");
+    expect(script).toContain("grep -q paseo-daemon");
+    // The kill should only happen inside the process name check
+    const grepIdx = script.indexOf("grep -q paseo-daemon");
+    const killIdx = script.indexOf('kill "$pid"');
+    expect(grepIdx).toBeLessThan(killIdx);
   });
 });

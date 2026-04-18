@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SshClient } from "./ssh-client.js";
+import { SshClient, expandRemotePath } from "./ssh-client.js";
 
 describe("SshClient", () => {
   test("buildSshArgs includes BatchMode and ConnectTimeout", () => {
@@ -33,5 +33,25 @@ describe("SshClient", () => {
     const args = client.buildSshArgs();
     expect(args).toContain("-i");
     expect(args).toContain("~/.ssh/id_ed25519");
+  });
+});
+
+describe("expandRemotePath", () => {
+  test("expands tilde to $HOME with proper quoting", () => {
+    const result = expandRemotePath("~/.paseo/bin/paseo-daemon");
+    expect(result).toBe(`"$HOME"/'${".paseo/bin/paseo-daemon"}'`);
+    // Must NOT start with a single-quoted tilde
+    expect(result).not.toMatch(/^'~/);
+  });
+
+  test("quotes absolute paths without $HOME expansion", () => {
+    const result = expandRemotePath("/usr/local/bin/paseo-daemon");
+    expect(result).toBe("'/usr/local/bin/paseo-daemon'");
+  });
+
+  test("escapes single quotes in path", () => {
+    const result = expandRemotePath("~/it's a path");
+    expect(result).toContain("$HOME");
+    expect(result).toContain("'\\''");
   });
 });

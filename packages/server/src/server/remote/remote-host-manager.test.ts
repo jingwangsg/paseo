@@ -69,6 +69,45 @@ describe("RemoteHostManager", () => {
     expect(manager.getHostState("unknown")).toBeNull();
   });
 
+  test("addHost rejects aliases containing colons", async () => {
+    const registry = stubRegistry();
+    const manager = new RemoteHostManager({
+      registry,
+      logger: SILENT_LOGGER,
+      localVersion: "1.0.0",
+    });
+
+    await expect(
+      manager.addHost({ hostAlias: "host:alias", hostname: "192.168.1.100" }),
+    ).rejects.toThrow("must not be empty or contain");
+  });
+
+  test("addHost rejects aliases containing slashes", async () => {
+    const registry = stubRegistry();
+    const manager = new RemoteHostManager({
+      registry,
+      logger: SILENT_LOGGER,
+      localVersion: "1.0.0",
+    });
+
+    await expect(
+      manager.addHost({ hostAlias: "host/alias", hostname: "192.168.1.100" }),
+    ).rejects.toThrow("must not be empty or contain");
+  });
+
+  test("addHost rejects empty aliases", async () => {
+    const registry = stubRegistry();
+    const manager = new RemoteHostManager({
+      registry,
+      logger: SILENT_LOGGER,
+      localVersion: "1.0.0",
+    });
+
+    await expect(manager.addHost({ hostAlias: "", hostname: "192.168.1.100" })).rejects.toThrow(
+      "must not be empty or contain",
+    );
+  });
+
   test("initialize loads hosts from registry as registered", async () => {
     const registry = stubRegistry([
       { hostAlias: "devbox", hostname: "192.168.1.100", addedAt: "2026-04-18T00:00:00.000Z" },

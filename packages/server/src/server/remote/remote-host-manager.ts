@@ -96,6 +96,13 @@ export class RemoteHostManager extends EventEmitter {
     port?: number;
     identityFile?: string;
   }): Promise<void> {
+    // Validate alias: no colons (used as delimiter in mirror IDs), no slashes, non-empty
+    if (!input.hostAlias || /[:/]/.test(input.hostAlias)) {
+      throw new Error(
+        `Invalid host alias "${input.hostAlias}": must not be empty or contain ':' or '/'`,
+      );
+    }
+
     const record: RemoteHostRecord = {
       hostAlias: input.hostAlias,
       hostname: input.hostname,
@@ -177,6 +184,10 @@ export class RemoteHostManager extends EventEmitter {
       });
 
       const reachable = await ssh.testConnection();
+
+      // Re-check after async — host may have been removed
+      if (!this.hosts.has(alias)) return;
+
       if (!reachable) {
         this.setStatus(alias, "unreachable", "SSH connection failed");
         return;
@@ -189,6 +200,9 @@ export class RemoteHostManager extends EventEmitter {
         getBinary: this.getBinary,
         logger: this.logger.child({ hostAlias: alias }),
       });
+
+      // Re-check after async — host may have been removed
+      if (!this.hosts.has(alias)) return;
 
       if (!deployResult.success) {
         this.setStatus(alias, "failed", deployResult.error ?? "Deployment failed");
@@ -210,6 +224,12 @@ export class RemoteHostManager extends EventEmitter {
         },
         this.logger,
       );
+
+      // Re-check before storing tunnel — host may have been removed
+      if (!this.hosts.has(alias)) {
+        tunnel.close();
+        return;
+      }
 
       this.tunnels.set(alias, tunnel);
 

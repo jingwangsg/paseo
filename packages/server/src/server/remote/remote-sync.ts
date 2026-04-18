@@ -58,6 +58,9 @@ export function reconcileRemoteWorkspaces(options: {
     const mirroredId = mirrorWorkspaceId(hostAlias, ws.workspaceId);
     seenIds.add(mirroredId);
 
+    // NOTE: Mirrored workspaces retain their remote cwd paths. Operations like
+    // terminal creation and agent spawning on these workspaces require the remote
+    // proxy routing (not yet implemented — see plan "Out of scope" section).
     onUpsert({
       ...ws,
       workspaceId: mirroredId,
@@ -125,7 +128,10 @@ export class RemoteSyncService {
     const api = createRemoteDaemonApi(tunnelPort);
     const prefix = `ssh:${hostAlias}:`;
 
+    let syncing = false;
     const sync = async () => {
+      if (syncing) return; // Skip if previous poll still running
+      syncing = true;
       try {
         const [remote, allProjects, allWorkspaces] = await Promise.all([
           api.fetchAll(),
@@ -159,6 +165,8 @@ export class RemoteSyncService {
         });
       } catch (err) {
         this.logger.warn({ err, hostAlias }, "Remote sync failed");
+      } finally {
+        syncing = false;
       }
     };
 

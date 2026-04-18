@@ -14,6 +14,14 @@ export interface ExecResult {
   stderr: string;
 }
 
+/** Expand ~ to "$HOME" with proper quoting for use in shell commands. */
+export function expandRemotePath(remotePath: string): string {
+  if (remotePath.startsWith("~/")) {
+    return `"$HOME"/'${remotePath.slice(2).replace(/'/g, "'\\''")}'`;
+  }
+  return `'${remotePath.replace(/'/g, "'\\''")}'`;
+}
+
 export class SshClient {
   private readonly config: SshClientConfig;
 
@@ -84,7 +92,7 @@ export class SshClient {
   }
 
   async upload(data: Buffer, remotePath: string): Promise<void> {
-    const args = [...this.buildSshArgs(), `cat > '${remotePath.replace(/'/g, "'\\''")}'`];
+    const args = [...this.buildSshArgs(), `cat > ${expandRemotePath(remotePath)}`];
     return new Promise((resolve, reject) => {
       const child = spawn("ssh", args, { stdio: ["pipe", "ignore", "pipe"] });
       let stderr = "";

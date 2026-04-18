@@ -45,18 +45,23 @@ export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
   }
 }
 
-export async function killRemoteDaemon(ssh: SshClient, logger: Logger): Promise<void> {
-  const script = [
+export function buildKillScript(): string {
+  return [
     `pid=$(cat ${REMOTE_PID_PATH} 2>/dev/null)`,
     `if [ -n "$pid" ]; then`,
-    `  kill "$pid" 2>/dev/null`,
-    `  for i in 1 2 3; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done`,
+    // Verify the process is actually a paseo daemon before killing
+    `  if ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon; then`,
+    `    kill "$pid" 2>/dev/null`,
+    `    for i in 1 2 3; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done`,
+    `  fi`,
     `fi`,
     `rm -f ${REMOTE_PID_PATH}`,
   ].join("; ");
+}
 
-  await ssh.exec(script);
-  logger.info("Killed existing remote daemon");
+export async function killRemoteDaemon(ssh: SshClient, logger: Logger): Promise<void> {
+  await ssh.exec(buildKillScript());
+  logger.info("Cleaned up remote daemon");
 }
 
 export async function uploadBinary(ssh: SshClient, binary: Buffer, logger: Logger): Promise<void> {
