@@ -510,6 +510,10 @@ export async function createPaseoDaemon(
           );
         }
       },
+      getBundle: async () => {
+        const bundlePath = path.join(config.paseoHome, "cache", "daemon.cjs");
+        return readFile(bundlePath);
+      },
     });
     await remoteHostManager.initialize();
     logger.info({ elapsed: elapsed() }, "Remote host manager initialized");

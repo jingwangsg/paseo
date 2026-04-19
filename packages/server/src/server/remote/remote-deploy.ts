@@ -3,6 +3,7 @@ import type { SshClient } from "./ssh-client.js";
 
 export const REMOTE_DAEMON_PORT = 6767;
 const REMOTE_BIN_PATH = "~/.paseo/bin/paseo-daemon";
+const REMOTE_BUNDLE_PATH = "~/.paseo/bin/daemon.cjs";
 const REMOTE_PID_PATH = "~/.paseo/paseo.pid";
 const POLL_INTERVAL_MS = 500;
 const POLL_MAX_ATTEMPTS = 20;
@@ -27,6 +28,10 @@ export function mapUnameToTarget(uname: string): string {
 
 export function remoteStartCommand(): string {
   return `${REMOTE_BIN_PATH} --daemon --no-host-scan --listen 127.0.0.1:${REMOTE_DAEMON_PORT}`;
+}
+
+export function remoteBundleStartCommand(nodePath: string): string {
+  return `${nodePath} ${REMOTE_BUNDLE_PATH} --daemon --no-host-scan --listen 127.0.0.1:${REMOTE_DAEMON_PORT}`;
 }
 
 export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
@@ -106,13 +111,30 @@ export interface DeployResult {
   error?: string;
 }
 
+async function findRemoteNode(ssh: SshClient): Promise<string | null> {
+  // Check common node locations
+  for (const candidate of ["node", "$HOME/.local/bin/node", "/usr/local/bin/node"]) {
+    const result = await ssh.exec(`${candidate} --version 2>/dev/null`);
+    if (result.exitCode === 0 && result.stdout.trim().startsWith("v")) {
+      // Resolve the full path for non-absolute candidates
+      if (candidate === "node") {
+        const which = await ssh.exec("which node 2>/dev/null");
+        return which.exitCode === 0 ? which.stdout.trim() : candidate;
+      }
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export async function ensureRemoteDaemon(options: {
   ssh: SshClient;
   localVersion: string;
   getBinary: (target: string) => Promise<Buffer>;
+  getBundle?: () => Promise<Buffer>;
   logger: Logger;
 }): Promise<DeployResult> {
-  const { ssh, localVersion, getBinary, logger } = options;
+  const { ssh, localVersion, getBinary, getBundle, logger } = options;
 
   const uname = await ssh.detectRemoteArch();
   const target = mapUnameToTarget(uname);
@@ -145,20 +167,58 @@ export async function ensureRemoteDaemon(options: {
     }
   }
 
-  const binary = await getBinary(target);
-
   if (remoteVersion) {
     await killRemoteDaemon(ssh, logger);
   }
 
-  await uploadBinary(ssh, binary, logger);
-  await startRemoteDaemon(ssh, logger);
-  const ready = await waitForRemoteDaemon(ssh, logger);
-
-  if (!ready) {
-    return { success: false, version: null, error: "Remote daemon failed to start" };
+  // Try SEA binary first
+  try {
+    const binary = await getBinary(target);
+    await uploadBinary(ssh, binary, logger);
+    await startRemoteDaemon(ssh, logger);
+    const ready = await waitForRemoteDaemon(ssh, logger);
+    if (ready) {
+      const newVersion = await getRemoteVersion(ssh);
+      return { success: true, version: newVersion };
+    }
+    logger.warn("SEA binary failed to start, trying JS bundle fallback");
+  } catch (err) {
+    logger.warn({ err }, "SEA binary not available, trying JS bundle fallback");
   }
 
-  const newVersion = await getRemoteVersion(ssh);
-  return { success: true, version: newVersion };
+  // Fallback: JS bundle + node runtime
+  if (!getBundle) {
+    return {
+      success: false,
+      version: null,
+      error: "No SEA binary and no bundle provider configured",
+    };
+  }
+
+  const nodePath = await findRemoteNode(ssh);
+  if (!nodePath) {
+    return {
+      success: false,
+      version: null,
+      error:
+        "Remote daemon failed to start (SEA binary crashed and no Node.js found on remote host)",
+    };
+  }
+
+  logger.info({ nodePath }, "Found Node.js on remote, deploying JS bundle");
+  const bundle = await getBundle();
+  await ssh.execChecked("mkdir -p ~/.paseo/bin");
+  await ssh.upload(bundle, REMOTE_BUNDLE_PATH);
+  logger.info({ size: bundle.length }, "Uploaded remote daemon bundle");
+
+  const cmd = remoteBundleStartCommand(nodePath);
+  await ssh.exec(`nohup ${cmd} > /dev/null 2>&1 &`);
+  logger.info("Remote daemon (bundle) start command issued");
+
+  const ready = await waitForRemoteDaemon(ssh, logger);
+  if (!ready) {
+    return { success: false, version: null, error: "Remote daemon (JS bundle) failed to start" };
+  }
+
+  return { success: true, version: localVersion };
 }
