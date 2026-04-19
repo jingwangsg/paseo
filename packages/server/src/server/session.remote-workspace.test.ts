@@ -438,7 +438,9 @@ const REMOTE_UNAVAILABLE_CASES = [
   },
 ] as const;
 
-function createSessionForRemoteWorkspaceTests() {
+function createSessionForRemoteWorkspaceTests(overrides?: {
+  downloadTokenStore?: Record<string, unknown>;
+}) {
   const emitted: Array<{ type: string; payload: unknown }> = [];
   const logger = {
     child: () => logger,
@@ -457,7 +459,7 @@ function createSessionForRemoteWorkspaceTests() {
     appVersion: null,
     onMessage: (message) => emitted.push(message as any),
     logger: logger as any,
-    downloadTokenStore: {} as any,
+    downloadTokenStore: (overrides?.downloadTokenStore ?? {}) as any,
     pushTokenStore: {} as any,
     paseoHome: "/tmp/paseo-test",
     agentManager: {
@@ -638,6 +640,93 @@ describe("remote ssh workspace routing", () => {
           file: null,
           error: null,
           requestId: "req-explorer",
+        },
+      },
+    ]);
+  });
+
+  test("converts remote download tokens into local proxy tokens without emitting the raw response", async () => {
+    const issueRemoteProxyToken = vi.fn(() => ({
+      token: "local-proxy-token",
+      kind: "remote",
+      path: "download.txt",
+      fileName: "download.txt",
+      mimeType: "text/plain",
+      size: 24,
+      hostAlias: HOST_ALIAS,
+      tunnelPort: 6768,
+      remoteToken: "remote-token-1",
+      expiresAt: 1_000,
+    }));
+    const { session, emitted } = createSessionForRemoteWorkspaceTests({
+      downloadTokenStore: { issueRemoteProxyToken },
+    });
+    const sendSessionMessage = vi.fn();
+    let onSessionMessage: ((msg: Record<string, unknown>) => void) | null = null;
+
+    createRemoteAgentProxyMock.mockImplementation(async (options) => {
+      onSessionMessage = options.onSessionMessage;
+      return {
+        sendSessionMessage,
+        close: vi.fn(),
+        alive: true,
+        hostAlias: options.hostAlias,
+      };
+    });
+
+    const requestPromise = session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-download-token",
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSessionMessage).toHaveBeenCalledWith({
+        type: "file_download_token_request",
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        requestId: "req-download-token",
+      });
+    });
+
+    onSessionMessage?.({
+      type: "file_download_token_response",
+      payload: {
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        token: "remote-token-1",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        error: null,
+        requestId: "req-download-token",
+      },
+    });
+
+    await requestPromise;
+
+    expect(issueRemoteProxyToken).toHaveBeenCalledWith({
+      path: "download.txt",
+      fileName: "download.txt",
+      mimeType: "text/plain",
+      size: 24,
+      hostAlias: HOST_ALIAS,
+      tunnelPort: 6768,
+      remoteToken: "remote-token-1",
+    });
+    expect(emitted).toEqual([
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: "local-proxy-token",
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-download-token",
         },
       },
     ]);
@@ -914,6 +1003,35 @@ describe("remote ssh workspace routing", () => {
           status: "agent_create_failed",
           requestId: "req-create-agent",
           error: 'Failed to connect to "osmo_9000": TLS broke',
+        },
+      },
+    ]);
+  });
+
+  test("emits the remote-unavailable fallback for file download token requests", async () => {
+    const { session, emitted, remoteHostManager } = createSessionForRemoteWorkspaceTests();
+
+    remoteHostManager.getTunnelPort.mockReturnValue(null);
+
+    await session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-download-token",
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: null,
+          fileName: null,
+          mimeType: null,
+          size: null,
+          error: "Remote host is not connected",
+          requestId: "req-download-token",
         },
       },
     ]);

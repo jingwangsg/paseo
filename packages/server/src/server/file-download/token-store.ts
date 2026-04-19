@@ -1,14 +1,27 @@
 import { randomUUID } from "node:crypto";
 
-export type DownloadTokenEntry = {
+type DownloadTokenEntryBase = {
   token: string;
   path: string;
-  absolutePath: string;
   fileName: string;
   mimeType: string;
   size: number;
   expiresAt: number;
 };
+
+export type LocalDownloadTokenEntry = DownloadTokenEntryBase & {
+  kind: "local";
+  absolutePath: string;
+};
+
+export type RemoteDownloadTokenEntry = DownloadTokenEntryBase & {
+  kind: "remote";
+  hostAlias: string;
+  tunnelPort: number;
+  remoteToken: string;
+};
+
+export type DownloadTokenEntry = LocalDownloadTokenEntry | RemoteDownloadTokenEntry;
 
 type DownloadTokenStoreOptions = {
   ttlMs: number;
@@ -25,12 +38,31 @@ export class DownloadTokenStore {
     this.now = options.now ?? (() => Date.now());
   }
 
-  issueToken(input: Omit<DownloadTokenEntry, "token" | "expiresAt">): DownloadTokenEntry {
+  issueToken(
+    input: Omit<LocalDownloadTokenEntry, "token" | "expiresAt" | "kind">,
+  ): LocalDownloadTokenEntry {
     this.pruneExpired();
     const token = randomUUID();
     const expiresAt = this.now() + this.ttlMs;
-    const entry: DownloadTokenEntry = {
+    const entry: LocalDownloadTokenEntry = {
       ...input,
+      kind: "local",
+      token,
+      expiresAt,
+    };
+    this.tokens.set(token, entry);
+    return entry;
+  }
+
+  issueRemoteProxyToken(
+    input: Omit<RemoteDownloadTokenEntry, "token" | "expiresAt" | "kind">,
+  ): RemoteDownloadTokenEntry {
+    this.pruneExpired();
+    const token = randomUUID();
+    const expiresAt = this.now() + this.ttlMs;
+    const entry: RemoteDownloadTokenEntry = {
+      ...input,
+      kind: "remote",
       token,
       expiresAt,
     };

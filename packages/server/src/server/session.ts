@@ -239,6 +239,7 @@ function clientSupportsFlexibleEditorIds(appVersion: string | null): boolean {
 }
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
+const REMOTE_RESPONSE_TIMEOUT_MS = 15_000;
 
 function deriveInitialAgentTitle(prompt: string): string | null {
   const firstContentLine = prompt
@@ -346,6 +347,12 @@ type WorkspaceUpdatesSubscriptionState = {
   isBootstrapping: boolean;
   pendingUpdatesByWorkspaceId: Map<string, WorkspaceUpdatePayload>;
   lastEmittedByWorkspaceId: Map<string, WorkspaceUpdatePayload>;
+};
+type PendingRemoteResponseWaiter = {
+  responseType: string;
+  resolve: (msg: Record<string, unknown>) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
 };
 type FetchWorkspacesCursor = {
   sort: FetchWorkspacesRequestSort[];
@@ -651,6 +658,7 @@ export class Session {
   private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
   private readonly remoteAgentProxies = new Map<string, RemoteAgentProxy>();
   private readonly remoteAgentProxyPromises = new Map<string, Promise<RemoteAgentProxy>>();
+  private readonly pendingRemoteResponses = new Map<string, PendingRemoteResponseWaiter>();
   private readonly daemonVersion: string | null;
 
   constructor(options: SessionOptions) {
@@ -5038,6 +5046,92 @@ export class Session {
    */
   private async handleFileDownloadTokenRequest(request: FileDownloadTokenRequest): Promise<void> {
     const { cwd: workspaceCwd, path: requestedPath, requestId } = request;
+    const hostAlias = extractHostAliasFromAgentId(workspaceCwd);
+
+    if (hostAlias && isSshNamespacedId(workspaceCwd)) {
+      const proxy = await this.ensureRemoteProxy(hostAlias);
+      const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
+      if (!proxy?.alive || !tunnelPort) {
+        this.emitRemoteWorkspaceUnavailableResponse(request);
+        return;
+      }
+
+      const remoteRequest = {
+        ...request,
+        cwd: stripSshNamespace(workspaceCwd),
+      };
+      const remoteResponsePromise = this.waitForRemoteResponse(
+        requestId,
+        "file_download_token_response",
+      );
+
+      try {
+        proxy.sendSessionMessage(remoteRequest);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.clearPendingRemoteResponse(
+          requestId,
+          new Error(`Failed to request remote download token from "${hostAlias}": ${message}`),
+        );
+        await remoteResponsePromise.catch(() => undefined);
+        this.emitFileDownloadTokenErrorResponse(
+          request,
+          `Failed to request remote download token from "${hostAlias}": ${message}`,
+        );
+        return;
+      }
+
+      try {
+        const remoteResponse = await remoteResponsePromise;
+        const payload = remoteResponse.payload as Record<string, unknown> | undefined;
+        const responsePath = typeof payload?.path === "string" ? payload.path : requestedPath;
+        const responseError = typeof payload?.error === "string" ? payload.error : null;
+
+        if (responseError) {
+          this.emitFileDownloadTokenErrorResponse(request, responseError, responsePath);
+          return;
+        }
+
+        const remoteToken = typeof payload?.token === "string" ? payload.token : null;
+        const fileName = typeof payload?.fileName === "string" ? payload.fileName : null;
+        const mimeType = typeof payload?.mimeType === "string" ? payload.mimeType : null;
+        const size = typeof payload?.size === "number" ? payload.size : null;
+
+        if (!remoteToken || !fileName || !mimeType || size === null) {
+          throw new Error("Remote daemon returned an invalid download token response");
+        }
+
+        const entry = this.downloadTokenStore.issueRemoteProxyToken({
+          path: responsePath,
+          fileName,
+          mimeType,
+          size,
+          hostAlias,
+          tunnelPort,
+          remoteToken,
+        });
+
+        this.emit({
+          type: "file_download_token_response",
+          payload: {
+            cwd: workspaceCwd,
+            path: entry.path,
+            token: entry.token,
+            fileName: entry.fileName,
+            mimeType: entry.mimeType,
+            size: entry.size,
+            error: null,
+            requestId,
+          },
+        });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emitFileDownloadTokenErrorResponse(request, message);
+        return;
+      }
+    }
+
     const cwd = workspaceCwd.trim();
     if (!cwd) {
       this.emit({
@@ -5107,6 +5201,26 @@ export class Session {
         },
       });
     }
+  }
+
+  private emitFileDownloadTokenErrorResponse(
+    request: FileDownloadTokenRequest,
+    error: string,
+    responsePath?: string,
+  ): void {
+    this.emit({
+      type: "file_download_token_response",
+      payload: {
+        cwd: request.cwd,
+        path: responsePath ?? request.path,
+        token: null,
+        fileName: null,
+        mimeType: null,
+        size: null,
+        error,
+        requestId: request.requestId,
+      },
+    });
   }
 
   /**
@@ -7735,6 +7849,64 @@ export class Session {
     return true;
   }
 
+  private waitForRemoteResponse(
+    requestId: string,
+    responseType: string,
+  ): Promise<Record<string, unknown>> {
+    const existing = this.pendingRemoteResponses.get(requestId);
+    if (existing) {
+      clearTimeout(existing.timeout);
+      existing.reject(
+        new Error(`Duplicate pending remote response waiter for request ${requestId}`),
+      );
+      this.pendingRemoteResponses.delete(requestId);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRemoteResponses.delete(requestId);
+        reject(new Error(`Timed out waiting for remote ${responseType}`));
+      }, REMOTE_RESPONSE_TIMEOUT_MS);
+
+      this.pendingRemoteResponses.set(requestId, {
+        responseType,
+        resolve,
+        reject,
+        timeout,
+      });
+    });
+  }
+
+  private clearPendingRemoteResponse(requestId: string, error: Error): void {
+    const waiter = this.pendingRemoteResponses.get(requestId);
+    if (!waiter) {
+      return;
+    }
+
+    clearTimeout(waiter.timeout);
+    this.pendingRemoteResponses.delete(requestId);
+    waiter.reject(error);
+  }
+
+  private resolvePendingRemoteResponse(msg: Record<string, unknown>): boolean {
+    const responseType = typeof msg.type === "string" ? msg.type : null;
+    const payload = msg.payload as Record<string, unknown> | undefined;
+    const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
+    if (!responseType || !requestId) {
+      return false;
+    }
+
+    const waiter = this.pendingRemoteResponses.get(requestId);
+    if (!waiter || waiter.responseType !== responseType) {
+      return false;
+    }
+
+    clearTimeout(waiter.timeout);
+    this.pendingRemoteResponses.delete(requestId);
+    waiter.resolve(msg);
+    return true;
+  }
+
   private emitRemoteWorkspaceUnavailableResponse(
     msg:
       | SubscribeCheckoutDiffRequest
@@ -7758,7 +7930,8 @@ export class Session {
       | Extract<SessionInboundMessage, { type: "branch_suggestions_request" }>
       | Extract<SessionInboundMessage, { type: "paseo_worktree_list_request" }>
       | Extract<SessionInboundMessage, { type: "paseo_worktree_archive_request" }>
-      | Extract<SessionInboundMessage, { type: "project_icon_request" }>,
+      | Extract<SessionInboundMessage, { type: "project_icon_request" }>
+      | FileDownloadTokenRequest,
   ): void {
     const checkoutError = {
       code: "UNKNOWN" as const,
@@ -8023,6 +8196,21 @@ export class Session {
           },
         });
         return;
+      case "file_download_token_request":
+        this.emit({
+          type: "file_download_token_response",
+          payload: {
+            cwd: msg.cwd,
+            path: msg.path,
+            token: null,
+            fileName: null,
+            mimeType: null,
+            size: null,
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+        return;
     }
   }
 
@@ -8038,6 +8226,10 @@ export class Session {
       "Remote agent response received, forwarding to client",
     );
     const rewritten = rewriteRemoteSessionMessage(hostAlias, remoteMsg);
+    const claimedByWaiter = this.resolvePendingRemoteResponse(rewritten);
+    if (claimedByWaiter && rewritten.type === "file_download_token_response") {
+      return;
+    }
     this.emit(rewritten as any);
   }
 
@@ -8432,6 +8624,12 @@ export class Session {
       unsubscribe();
     }
     this.workspaceGitSubscriptions.clear();
+
+    for (const [requestId, waiter] of this.pendingRemoteResponses) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(new Error(`Session closed while waiting for remote response ${requestId}`));
+    }
+    this.pendingRemoteResponses.clear();
 
     if (this.remoteHostStatusListener && this.remoteHostManager) {
       this.remoteHostManager.removeListener("status_update", this.remoteHostStatusListener);

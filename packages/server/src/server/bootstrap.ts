@@ -5,6 +5,7 @@ import { stat, readFile } from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname as getHostname } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Logger } from "pino";
@@ -314,6 +315,34 @@ export async function createPaseoDaemon(
       }
 
       try {
+        if (entry.kind === "remote") {
+          const remoteResponse = await fetch(
+            `http://127.0.0.1:${entry.tunnelPort}/api/files/download?token=${encodeURIComponent(entry.remoteToken)}`,
+          );
+
+          res.status(remoteResponse.status);
+          remoteResponse.headers.forEach((value, key) => {
+            res.setHeader(key, value);
+          });
+
+          if (!remoteResponse.body) {
+            res.end();
+            return;
+          }
+
+          const stream = Readable.fromWeb(remoteResponse.body as any);
+          stream.on("error", (err) => {
+            logger.error({ err, hostAlias: entry.hostAlias }, "Failed to proxy remote download");
+            if (!res.headersSent) {
+              res.status(502).json({ error: "Failed to read remote file" });
+            } else {
+              res.end();
+            }
+          });
+          stream.pipe(res);
+          return;
+        }
+
         const fileStats = await stat(entry.absolutePath);
         if (!fileStats.isFile()) {
           res.status(404).json({ error: "File not found" });
