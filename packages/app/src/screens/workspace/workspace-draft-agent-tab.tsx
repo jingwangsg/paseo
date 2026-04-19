@@ -11,7 +11,7 @@ import { useDraftAgentCreateFlow } from "@/hooks/use-draft-agent-create-flow";
 import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { buildDraftStoreKey } from "@/stores/draft-keys";
-import type { Agent } from "@/stores/session-store";
+import { useSessionStore, type Agent } from "@/stores/session-store";
 import { encodeImages } from "@/utils/encode-images";
 import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/workspace-draft-pane-focus";
 import type {
@@ -52,6 +52,10 @@ export function WorkspaceDraftAgentTab({
 }: WorkspaceDraftAgentTabProps) {
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const executionHost = useSessionStore(
+    (state) => state.sessions[serverId]?.workspaces.get(workspaceId)?.executionHost,
+  );
+  const host = executionHost?.kind === "ssh" ? executionHost.hostAlias : undefined;
   const addImagesRef = useRef<((images: ImageAttachment[]) => void) | null>(null);
   const draftInput = useAgentInputDraft(
     buildDraftStoreKey({
@@ -212,6 +216,7 @@ export function WorkspaceDraftAgentTab({
         initialPrompt: text,
         clientMessageId: attempt.clientMessageId,
         ...(imagesData && imagesData.length > 0 ? { images: imagesData } : {}),
+        ...(host ? { host } : {}),
       });
 
       return {

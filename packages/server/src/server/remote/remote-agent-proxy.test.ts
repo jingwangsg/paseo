@@ -3,6 +3,8 @@ import {
   rewriteRemoteAgentId,
   rewriteLocalAgentId,
   isRemoteAgentId,
+  isSshNamespacedId,
+  stripSshNamespace,
   extractHostAliasFromAgentId,
   buildRemoteDaemonWsUrl,
   extractHostAliasFromProjectId,
@@ -43,5 +45,27 @@ describe("remote-agent-proxy", () => {
   test("extractHostAliasFromProjectId returns null for local projects", () => {
     expect(extractHostAliasFromProjectId("remote:github.com/user/repo")).toBeNull();
     expect(extractHostAliasFromProjectId("/tmp/project")).toBeNull();
+  });
+
+  test("isSshNamespacedId detects ssh-namespaced values", () => {
+    expect(isSshNamespacedId("ssh:osmo_9000:/mnt/data/project")).toBe(true);
+    expect(isSshNamespacedId("ssh:devbox:ws:/home/user/repo")).toBe(true);
+    expect(isSshNamespacedId("/mnt/data/project")).toBe(false);
+    expect(isSshNamespacedId("")).toBe(false);
+  });
+
+  test("stripSshNamespace extracts remote-local value", () => {
+    expect(stripSshNamespace("ssh:osmo_9000:/mnt/data/project")).toBe("/mnt/data/project");
+    expect(stripSshNamespace("ssh:devbox:ws:/home/user/repo")).toBe("ws:/home/user/repo");
+    expect(stripSshNamespace("ssh:host:abc-123")).toBe("abc-123");
+  });
+
+  test("stripSshNamespace returns original for non-ssh values", () => {
+    expect(stripSshNamespace("/mnt/data/project")).toBe("/mnt/data/project");
+    expect(stripSshNamespace("abc-123")).toBe("abc-123");
+  });
+
+  test("stripSshNamespace returns original for malformed ssh prefix", () => {
+    expect(stripSshNamespace("ssh:noColon")).toBe("ssh:noColon");
   });
 });

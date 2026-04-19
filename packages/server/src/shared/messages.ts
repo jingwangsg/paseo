@@ -1393,6 +1393,7 @@ export const CreateTerminalRequestSchema = z.object({
   type: z.literal("create_terminal_request"),
   cwd: z.string(),
   name: z.string().optional(),
+  host: z.string().optional(),
   requestId: z.string(),
 });
 

@@ -935,12 +935,18 @@ function DraftAgentScreenContent({
       }
 
       const imagesData = await encodeImages(images);
+      const execHost = selectedServerId
+        ? useSessionStore.getState().sessions[selectedServerId]?.workspaces.get(config.cwd)
+            ?.executionHost
+        : undefined;
+      const host = execHost?.kind === "ssh" ? execHost.hostAlias : undefined;
       const result = await client.createAgent({
         config,
         initialPrompt: text,
         clientMessageId: attempt.clientMessageId,
         ...(imagesData && imagesData.length > 0 ? { images: imagesData } : {}),
         git: gitOptions,
+        ...(host ? { host } : {}),
       });
 
       if (!result.id || !selectedServerId) {

@@ -662,7 +662,13 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
       if (!client) {
         throw new Error("Host is not connected");
       }
-      return await client.createTerminal(normalizedWorkspaceId);
+      const execHost = normalizedServerId
+        ? useSessionStore
+            .getState()
+            .sessions[normalizedServerId]?.workspaces.get(normalizedWorkspaceId)?.executionHost
+        : undefined;
+      const host = execHost?.kind === "ssh" ? execHost.hostAlias : undefined;
+      return await client.createTerminal(normalizedWorkspaceId, undefined, undefined, host);
     },
     onSuccess: (payload, input) => {
       const createdTerminal = payload.terminal;

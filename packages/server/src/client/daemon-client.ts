@@ -3018,12 +3018,14 @@ export class DaemonClient {
     cwd: string,
     name?: string,
     requestId?: string,
+    host?: string,
   ): Promise<CreateTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "create_terminal_request",
       cwd,
       name,
+      ...(host ? { host } : {}),
       requestId: resolvedRequestId,
     });
     return this.sendCorrelatedRequest({

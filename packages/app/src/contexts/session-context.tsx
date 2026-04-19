@@ -1722,6 +1722,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       git,
       worktreeName,
       requestId,
+      host,
     }: {
       config: any;
       initialPrompt: string;
@@ -1729,6 +1730,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       git?: any;
       worktreeName?: string;
       requestId?: string;
+      host?: string;
     }) => {
       if (!client) {
         console.warn("[Session] createAgent skipped: daemon unavailable");
@@ -1748,6 +1750,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         ...(git ? { git } : {}),
         ...(worktreeName ? { worktreeName } : {}),
         ...(requestId ? { requestId } : {}),
+        ...(host ? { host } : {}),
       });
     },
     [encodeImages, client],
