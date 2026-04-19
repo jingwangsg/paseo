@@ -10,6 +10,7 @@ REMOTE_ALIAS="$1"
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 FLOW="$REPO_ROOT/packages/app/maestro/remote-workspace-parity.yaml"
 FIXTURE_SCRIPT="$REPO_ROOT/packages/app/maestro/setup-remote-fixture.sh"
+SIMULATOR_SELECTOR="$REPO_ROOT/packages/app/maestro/select-ios-simulator.ts"
 OUT_DIR="${PASEO_MAESTRO_OUT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/paseo-remote-workspace-parity.XXXXXX")}"
 PASEO_HOME="$OUT_DIR/paseo-home"
 DAEMON_LOG="$OUT_DIR/daemon.log"
@@ -104,37 +105,18 @@ wait_for_http() {
   done
 }
 
-select_simulator() {
-  local booted
-  booted="$(xcrun simctl list devices booted available | sed -nE 's/^.*\(([0-9A-F-]+)\) \(Booted\)$/\1/p' | head -n1)"
-  if [ -n "$booted" ]; then
-    echo "$booted"
-    return 0
-  fi
-
-  xcrun simctl list devices available \
-    | sed -nE 's/^[[:space:]]+iPhone[^()]*\(([0-9A-F-]+)\) \([A-Za-z ]+\)$/\1/p' \
-    | head -n1
-}
-
 if ! MAESTRO_BIN="$(resolve_maestro_bin)"; then
   echo "ERROR: Maestro CLI not found." >&2
   echo "Evidence: command -v maestro failed, and no executable was found at ~/.maestro/bin/maestro, /opt/homebrew/bin/maestro, or /usr/local/bin/maestro." >&2
   exit 1
 fi
 
-if ! xcrun simctl list devices available | grep -Eq 'iPhone|iPad'; then
-  echo "ERROR: No iOS simulator devices are available." >&2
+SIMCTL_OUTPUT="$(xcrun simctl list devices available)"
+if ! SIMULATOR_ID="$(printf '%s\n' "$SIMCTL_OUTPUT" | npx tsx "$SIMULATOR_SELECTOR" 2>"$OUT_DIR/simulator-selection.log")"; then
+  echo "ERROR: Failed to select an iPhone simulator." >&2
+  cat "$OUT_DIR/simulator-selection.log" >&2
   echo "Evidence from 'xcrun simctl list devices available':" >&2
-  xcrun simctl list devices available >&2
-  exit 1
-fi
-
-SIMULATOR_ID="$(select_simulator)"
-if [ -z "$SIMULATOR_ID" ]; then
-  echo "ERROR: Failed to select an iOS simulator device." >&2
-  echo "Evidence from 'xcrun simctl list devices available':" >&2
-  xcrun simctl list devices available >&2
+  printf '%s\n' "$SIMCTL_OUTPUT" >&2
   exit 1
 fi
 

@@ -35,7 +35,6 @@ export interface AddHostMethodModalProps {
   onClose: () => void;
   onDirectConnection: () => void;
   onSshHost?: () => void;
-  isDesktopApp?: boolean;
 }
 
 export function AddHostMethodModal({
@@ -43,7 +42,6 @@ export function AddHostMethodModal({
   onClose,
   onDirectConnection,
   onSshHost,
-  isDesktopApp,
 }: AddHostMethodModalProps) {
   const { theme } = useUnistyles();
 

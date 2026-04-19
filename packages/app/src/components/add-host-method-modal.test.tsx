@@ -50,12 +50,7 @@ import { AddHostMethodModal } from "./add-host-method-modal";
 describe("AddHostMethodModal", () => {
   test("always renders the direct connection option", () => {
     const markup = renderToStaticMarkup(
-      <AddHostMethodModal
-        visible
-        onClose={() => {}}
-        onDirectConnection={() => {}}
-        isDesktopApp={false}
-      />,
+      <AddHostMethodModal visible onClose={() => {}} onDirectConnection={() => {}} />,
     );
 
     expect(markup).toContain("Direct connection");
@@ -68,7 +63,6 @@ describe("AddHostMethodModal", () => {
         onClose={() => {}}
         onDirectConnection={() => {}}
         onSshHost={() => {}}
-        isDesktopApp={false}
       />,
     );
 
@@ -77,12 +71,7 @@ describe("AddHostMethodModal", () => {
 
   test("does not render the SSH host option when no SSH handler is provided", () => {
     const markup = renderToStaticMarkup(
-      <AddHostMethodModal
-        visible
-        onClose={() => {}}
-        onDirectConnection={() => {}}
-        isDesktopApp={true}
-      />,
+      <AddHostMethodModal visible onClose={() => {}} onDirectConnection={() => {}} />,
     );
 
     expect(markup).not.toContain("SSH host");

@@ -267,7 +267,6 @@ function HostsSection(props: HostsSectionProps) {
           props.setIsAddHostMethodVisible(false);
           props.setIsSshHostVisible(true);
         }}
-        isDesktopApp={props.isDesktopApp}
       />
 
       <AddHostModal
