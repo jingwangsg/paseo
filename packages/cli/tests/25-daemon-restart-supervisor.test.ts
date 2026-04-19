@@ -134,7 +134,6 @@ try {
         ...testEnv,
         PASEO_HOME: paseoHome,
         PASEO_LISTEN: host,
-        PASEO_RELAY_ENABLED: "false",
         CI: "true",
       },
       stdio: ["ignore", "pipe", "pipe"],
