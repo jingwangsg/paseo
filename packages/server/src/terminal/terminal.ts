@@ -1,4 +1,3 @@
-import * as pty from "node-pty";
 import xterm, { type Terminal as TerminalType } from "@xterm/headless";
 import { randomUUID } from "crypto";
 import { chmodSync, existsSync, statSync } from "node:fs";
@@ -332,6 +331,10 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
   });
 
   ensureNodePtySpawnHelperExecutableForCurrentPlatform();
+
+  // Lazy-load node-pty so the daemon can start without the native module
+  // (e.g. in SEA binaries deployed to remote hosts where terminals aren't needed at startup)
+  const pty = await import("node-pty");
 
   // Create PTY
   const ptyProcess = pty.spawn(resolvedShell, [], {
