@@ -180,7 +180,6 @@ import type pino from "pino";
 import type { RemoteHostManager, RemoteHostStatusEntry } from "./remote/remote-host-manager.js";
 import {
   createRemoteAgentProxy,
-  rewriteRemoteAgentId,
   rewriteLocalAgentId,
   isRemoteAgentId,
   isSshNamespacedId,
@@ -188,6 +187,7 @@ import {
   extractHostAliasFromAgentId,
   type RemoteAgentProxy,
 } from "./remote/remote-agent-proxy.js";
+import { rewriteRemoteSessionMessage } from "./remote/remote-session-message.js";
 import { resolveClientMessageId } from "./client-message-id.js";
 import { ChatServiceError, FileBackedChatService } from "./chat/chat-service.js";
 import { notifyChatMentions } from "./chat/chat-mentions.js";
@@ -7487,60 +7487,8 @@ export class Session {
       },
       "Remote agent response received, forwarding to client",
     );
-    const rewritten = this.rewriteAgentIdsInMessage(hostAlias, remoteMsg);
+    const rewritten = rewriteRemoteSessionMessage(hostAlias, remoteMsg);
     this.emit(rewritten as any);
-  }
-
-  private rewriteAgentIdsInMessage(
-    hostAlias: string,
-    msg: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const result = { ...msg };
-    if (typeof result.agentId === "string") {
-      result.agentId = rewriteRemoteAgentId(hostAlias, result.agentId);
-    }
-    if (result.payload && typeof result.payload === "object") {
-      const payload = { ...(result.payload as Record<string, unknown>) };
-      if (typeof payload.agentId === "string") {
-        payload.agentId = rewriteRemoteAgentId(hostAlias, payload.agentId);
-      }
-      if (payload.agent && typeof payload.agent === "object") {
-        const agent = { ...(payload.agent as Record<string, unknown>) };
-        if (typeof agent.id === "string") {
-          agent.id = rewriteRemoteAgentId(hostAlias, agent.id);
-        }
-        payload.agent = agent;
-      }
-      if (payload.final && typeof payload.final === "object") {
-        const final = { ...(payload.final as Record<string, unknown>) };
-        if (typeof final.id === "string") {
-          final.id = rewriteRemoteAgentId(hostAlias, final.id);
-        }
-        payload.final = final;
-      }
-      // Rewrite terminal IDs in remote responses
-      if (typeof payload.terminalId === "string") {
-        payload.terminalId = rewriteRemoteAgentId(hostAlias, payload.terminalId);
-      }
-      if (payload.terminal && typeof payload.terminal === "object") {
-        const terminal = { ...(payload.terminal as Record<string, unknown>) };
-        if (typeof terminal.id === "string") {
-          terminal.id = rewriteRemoteAgentId(hostAlias, terminal.id);
-        }
-        payload.terminal = terminal;
-      }
-      if (Array.isArray(payload.terminals)) {
-        payload.terminals = (payload.terminals as Record<string, unknown>[]).map((t) => {
-          const terminal = { ...t };
-          if (typeof terminal.id === "string") {
-            terminal.id = rewriteRemoteAgentId(hostAlias, terminal.id);
-          }
-          return terminal;
-        });
-      }
-      result.payload = payload;
-    }
-    return result;
   }
 
   private forwardToRemoteAgent(agentId: string, msg: Record<string, unknown>): boolean {
