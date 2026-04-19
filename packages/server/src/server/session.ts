@@ -2955,17 +2955,6 @@ export class Session {
       }
     } catch (error: any) {
       this.sessionLogger.error({ err: error }, "Failed to resume agent");
-      if (requestId) {
-        this.emit({
-          type: "rpc_error",
-          payload: {
-            requestId,
-            requestType: "resume_agent_request",
-            error: `Request failed: ${error.message}`,
-            code: "handler_error",
-          },
-        });
-      }
       this.emit({
         type: "activity_log",
         payload: {
@@ -3027,17 +3016,6 @@ export class Session {
       }
     } catch (error: any) {
       this.sessionLogger.error({ err: error, agentId }, `Failed to refresh agent ${agentId}`);
-      if (requestId) {
-        this.emit({
-          type: "rpc_error",
-          payload: {
-            requestId,
-            requestType: "refresh_agent_request",
-            error: `Request failed: ${error.message}`,
-            code: "handler_error",
-          },
-        });
-      }
       this.emit({
         type: "activity_log",
         payload: {
