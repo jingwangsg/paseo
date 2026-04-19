@@ -5,8 +5,8 @@ export const REMOTE_DAEMON_PORT = 6767;
 const REMOTE_BIN_PATH = "~/.paseo/bin/paseo-daemon";
 const REMOTE_BUNDLE_PATH = "~/.paseo/bin/daemon.cjs";
 const REMOTE_PID_PATH = "~/.paseo/paseo.pid";
-const POLL_INTERVAL_MS = 500;
-const POLL_MAX_ATTEMPTS = 20;
+const POLL_INTERVAL_MS = 1000;
+const POLL_MAX_ATTEMPTS = 30;
 
 /** Extract numeric PID from the JSON PID lock file ({"pid":12345,...}).
  *  Uses sed to parse — avoids requiring jq on remote hosts. */
@@ -88,7 +88,8 @@ export async function startRemoteDaemon(ssh: SshClient, logger: Logger): Promise
   logger.info("Remote daemon start command issued");
 }
 
-const PORT_CHECK_CMD = `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`;
+// Prefer bash /dev/tcp (most reliable in SSH sessions), then nc, then python3
+const PORT_CHECK_CMD = `(echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null || nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null`;
 
 export async function waitForRemoteDaemon(ssh: SshClient, logger: Logger): Promise<boolean> {
   for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
@@ -113,16 +114,20 @@ export interface DeployResult {
 }
 
 async function findRemoteNode(ssh: SshClient): Promise<string | null> {
-  // Check common node locations
-  for (const candidate of ["node", "$HOME/.local/bin/node", "/usr/local/bin/node"]) {
-    const result = await ssh.exec(`${candidate} --version 2>/dev/null`);
+  // Check common node locations — resolve to absolute paths to avoid
+  // shell variable expansion issues in nohup contexts.
+  const candidates = [
+    "which node 2>/dev/null",
+    'eval echo "$HOME/.local/bin/node"',
+    "echo /usr/local/bin/node",
+  ];
+  for (const resolveCmd of candidates) {
+    const resolved = await ssh.exec(resolveCmd);
+    const nodePath = resolved.stdout.trim();
+    if (!nodePath) continue;
+    const result = await ssh.exec(`${nodePath} --version 2>/dev/null`);
     if (result.exitCode === 0 && result.stdout.trim().startsWith("v")) {
-      // Resolve the full path for non-absolute candidates
-      if (candidate === "node") {
-        const which = await ssh.exec("which node 2>/dev/null");
-        return which.exitCode === 0 ? which.stdout.trim() : candidate;
-      }
-      return candidate;
+      return nodePath;
     }
   }
   return null;
@@ -159,9 +164,7 @@ export async function ensureRemoteDaemon(options: {
   // If no SEA binary but a daemon is already listening on the port (e.g., started
   // manually via tsx), skip deployment and treat it as ready.
   if (!remoteVersion) {
-    const portCheck = await ssh.exec(
-      `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
-    );
+    const portCheck = await ssh.exec(PORT_CHECK_CMD);
     if (portCheck.exitCode === 0) {
       logger.info("Remote daemon already listening (no SEA binary, likely dev mode)");
       return { success: true, version: "dev" };
@@ -207,6 +210,11 @@ export async function ensureRemoteDaemon(options: {
   }
 
   logger.info({ nodePath }, "Found Node.js on remote, deploying JS bundle");
+
+  // Kill any leftover daemon and clean stale PID file before starting fresh
+  await ssh.exec(buildKillScript());
+  await ssh.exec(`pkill -f "daemon\\.cjs" 2>/dev/null; rm -f ${REMOTE_PID_PATH}`);
+
   const bundle = await getBundle();
   await ssh.execChecked("mkdir -p ~/.paseo/bin");
   await ssh.upload(bundle, REMOTE_BUNDLE_PATH);
