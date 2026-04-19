@@ -25,6 +25,9 @@ import { Session } from "./session.js";
 const HOST_ALIAS = "osmo_9000";
 const SSH_CWD = "ssh:osmo_9000:/mnt/data/repo";
 const REMOTE_CWD = "/mnt/data/repo";
+const HOST_ALIAS_2 = "osmo_9001";
+const SSH_CWD_2 = "ssh:osmo_9001:/srv/repo";
+const REMOTE_CWD_2 = "/srv/repo";
 const REMOTE_WORKTREE_ID = "/mnt/data/repo/.paseo/worktrees/feature-a";
 const SETUP_TERMINAL_ID = "term-setup";
 const SSH_WORKTREE_PATH = `ssh:${HOST_ALIAS}:${REMOTE_WORKTREE_ID}`;
@@ -440,6 +443,7 @@ const REMOTE_UNAVAILABLE_CASES = [
 
 function createSessionForRemoteWorkspaceTests(overrides?: {
   downloadTokenStore?: Record<string, unknown>;
+  tunnelPorts?: Record<string, number | null>;
 }) {
   const emitted: Array<{ type: string; payload: unknown }> = [];
   const logger = {
@@ -450,8 +454,12 @@ function createSessionForRemoteWorkspaceTests(overrides?: {
     warn: vi.fn(),
     error: vi.fn(),
   };
+  const tunnelPorts = overrides?.tunnelPorts ?? {
+    [HOST_ALIAS]: 6768,
+    [HOST_ALIAS_2]: 6769,
+  };
   const remoteHostManager = {
-    getTunnelPort: vi.fn((hostAlias: string) => (hostAlias === HOST_ALIAS ? 6768 : null)),
+    getTunnelPort: vi.fn((hostAlias: string) => tunnelPorts[hostAlias] ?? null),
   };
 
   const session = new Session({
@@ -730,6 +738,375 @@ describe("remote ssh workspace routing", () => {
         },
       },
     ]);
+  });
+
+  test("drops late remote download token responses after timeout instead of emitting the raw token", async () => {
+    vi.useFakeTimers();
+    try {
+      const issueRemoteProxyToken = vi.fn();
+      const { session, emitted } = createSessionForRemoteWorkspaceTests({
+        downloadTokenStore: { issueRemoteProxyToken },
+      });
+      const sendSessionMessage = vi.fn();
+      let onSessionMessage: ((msg: Record<string, unknown>) => void) | null = null;
+
+      createRemoteAgentProxyMock.mockImplementation(async (options) => {
+        onSessionMessage = options.onSessionMessage;
+        return {
+          sendSessionMessage,
+          close: vi.fn(),
+          alive: true,
+          hostAlias: options.hostAlias,
+        };
+      });
+
+      const requestPromise = session.handleMessage({
+        type: "file_download_token_request",
+        cwd: SSH_CWD,
+        path: "download.txt",
+        requestId: "req-timeout",
+      });
+
+      await vi.waitFor(() => {
+        expect(sendSessionMessage).toHaveBeenCalledWith({
+          type: "file_download_token_request",
+          cwd: REMOTE_CWD,
+          path: "download.txt",
+          requestId: "req-timeout",
+        });
+      });
+
+      await vi.advanceTimersByTimeAsync(15_001);
+      await requestPromise;
+
+      expect(emitted).toEqual([
+        {
+          type: "file_download_token_response",
+          payload: {
+            cwd: SSH_CWD,
+            path: "download.txt",
+            token: null,
+            fileName: null,
+            mimeType: null,
+            size: null,
+            error: "Timed out waiting for remote file_download_token_response",
+            requestId: "req-timeout",
+          },
+        },
+      ]);
+
+      onSessionMessage?.({
+        type: "file_download_token_response",
+        payload: {
+          cwd: REMOTE_CWD,
+          path: "download.txt",
+          token: "remote-token-late",
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-timeout",
+        },
+      });
+
+      expect(issueRemoteProxyToken).not.toHaveBeenCalled();
+      expect(emitted).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("keeps duplicate request ids isolated across remote hosts", async () => {
+    const issueRemoteProxyToken = vi
+      .fn()
+      .mockImplementation(({ hostAlias }: { hostAlias: string }) => ({
+        token: `local-proxy-${hostAlias}`,
+        kind: "remote",
+        path: "download.txt",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        hostAlias,
+        tunnelPort: hostAlias === HOST_ALIAS ? 6768 : 6769,
+        remoteToken: `remote-token-${hostAlias}`,
+        expiresAt: 1_000,
+      }));
+    const { session, emitted } = createSessionForRemoteWorkspaceTests({
+      downloadTokenStore: { issueRemoteProxyToken },
+    });
+    const sendSessionMessages = new Map<string, ReturnType<typeof vi.fn>>();
+    const onSessionMessages = new Map<string, (msg: Record<string, unknown>) => void>();
+
+    createRemoteAgentProxyMock.mockImplementation(async (options) => {
+      const sendSessionMessage = vi.fn();
+      sendSessionMessages.set(options.hostAlias, sendSessionMessage);
+      onSessionMessages.set(options.hostAlias, options.onSessionMessage);
+      return {
+        sendSessionMessage,
+        close: vi.fn(),
+        alive: true,
+        hostAlias: options.hostAlias,
+      };
+    });
+
+    const firstRequest = session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-shared",
+    });
+    const secondRequest = session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD_2,
+      path: "download.txt",
+      requestId: "req-shared",
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSessionMessages.get(HOST_ALIAS)).toHaveBeenCalledWith({
+        type: "file_download_token_request",
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        requestId: "req-shared",
+      });
+      expect(sendSessionMessages.get(HOST_ALIAS_2)).toHaveBeenCalledWith({
+        type: "file_download_token_request",
+        cwd: REMOTE_CWD_2,
+        path: "download.txt",
+        requestId: "req-shared",
+      });
+    });
+
+    onSessionMessages.get(HOST_ALIAS_2)?.({
+      type: "file_download_token_response",
+      payload: {
+        cwd: REMOTE_CWD_2,
+        path: "download.txt",
+        token: "remote-token-host-2",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        error: null,
+        requestId: "req-shared",
+      },
+    });
+    onSessionMessages.get(HOST_ALIAS)?.({
+      type: "file_download_token_response",
+      payload: {
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        token: "remote-token-host-1",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        error: null,
+        requestId: "req-shared",
+      },
+    });
+
+    await Promise.all([firstRequest, secondRequest]);
+
+    expect(issueRemoteProxyToken).toHaveBeenNthCalledWith(1, {
+      path: "download.txt",
+      fileName: "download.txt",
+      mimeType: "text/plain",
+      size: 24,
+      hostAlias: HOST_ALIAS_2,
+      tunnelPort: 6769,
+      remoteToken: "remote-token-host-2",
+    });
+    expect(issueRemoteProxyToken).toHaveBeenNthCalledWith(2, {
+      path: "download.txt",
+      fileName: "download.txt",
+      mimeType: "text/plain",
+      size: 24,
+      hostAlias: HOST_ALIAS,
+      tunnelPort: 6768,
+      remoteToken: "remote-token-host-1",
+    });
+    expect(emitted).toEqual([
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD_2,
+          path: "download.txt",
+          token: `local-proxy-${HOST_ALIAS_2}`,
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-shared",
+        },
+      },
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: `local-proxy-${HOST_ALIAS}`,
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-shared",
+        },
+      },
+    ]);
+  });
+
+  test("rejects a concurrent remote download request with the same host and request id", async () => {
+    const issueRemoteProxyToken = vi.fn(() => ({
+      token: "local-proxy-token",
+      kind: "remote",
+      path: "download.txt",
+      fileName: "download.txt",
+      mimeType: "text/plain",
+      size: 24,
+      hostAlias: HOST_ALIAS,
+      tunnelPort: 6768,
+      remoteToken: "remote-token-1",
+      expiresAt: 1_000,
+    }));
+    const { session, emitted } = createSessionForRemoteWorkspaceTests({
+      downloadTokenStore: { issueRemoteProxyToken },
+    });
+    const sendSessionMessage = vi.fn();
+    let onSessionMessage: ((msg: Record<string, unknown>) => void) | null = null;
+
+    createRemoteAgentProxyMock.mockImplementation(async (options) => {
+      onSessionMessage = options.onSessionMessage;
+      return {
+        sendSessionMessage,
+        close: vi.fn(),
+        alive: true,
+        hostAlias: options.hostAlias,
+      };
+    });
+
+    const firstRequest = session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-duplicate",
+    });
+
+    await vi.waitFor(() => {
+      expect(sendSessionMessage).toHaveBeenCalledWith({
+        type: "file_download_token_request",
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        requestId: "req-duplicate",
+      });
+    });
+
+    const secondRequest = session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-duplicate",
+    });
+
+    await secondRequest;
+
+    onSessionMessage?.({
+      type: "file_download_token_response",
+      payload: {
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        token: "remote-token-1",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        error: null,
+        requestId: "req-duplicate",
+      },
+    });
+
+    await firstRequest;
+
+    expect(issueRemoteProxyToken).toHaveBeenCalledTimes(1);
+    expect(emitted).toEqual([
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: null,
+          fileName: null,
+          mimeType: null,
+          size: null,
+          error:
+            'A remote download token request is already pending for "osmo_9000" with requestId "req-duplicate"',
+          requestId: "req-duplicate",
+        },
+      },
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: "local-proxy-token",
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-duplicate",
+        },
+      },
+    ]);
+  });
+
+  test("drops late remote download token responses after send failure", async () => {
+    const { session, emitted } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn(() => {
+      throw new Error("socket closed");
+    });
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "file_download_token_request",
+      cwd: SSH_CWD,
+      path: "download.txt",
+      requestId: "req-send-failure",
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "file_download_token_response",
+        payload: {
+          cwd: SSH_CWD,
+          path: "download.txt",
+          token: null,
+          fileName: null,
+          mimeType: null,
+          size: null,
+          error: 'Failed to request remote download token from "osmo_9000": socket closed',
+          requestId: "req-send-failure",
+        },
+      },
+    ]);
+
+    session.handleRemoteAgentResponse(HOST_ALIAS, {
+      type: "file_download_token_response",
+      payload: {
+        cwd: REMOTE_CWD,
+        path: "download.txt",
+        token: "remote-token-late",
+        fileName: "download.txt",
+        mimeType: "text/plain",
+        size: 24,
+        error: null,
+        requestId: "req-send-failure",
+      },
+    });
+
+    expect(emitted).toHaveLength(1);
   });
 
   test("forwards checkout_status_request by ssh cwd and rewrites the response", async () => {

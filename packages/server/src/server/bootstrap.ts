@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Logger } from "pino";
+import type { RequestHandler } from "express";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -149,6 +150,93 @@ function createAgentMcpBaseUrl(listenTarget: ListenTarget | null): string | null
     "/mcp/agents",
     `http://${formatHostForHttpUrl(listenTarget.host)}:${listenTarget.port}`,
   ).toString();
+}
+
+export function createFileDownloadHandler(
+  downloadTokenStore: DownloadTokenStore,
+  logger: Logger,
+): RequestHandler {
+  return async (req, res) => {
+    const token =
+      typeof req.query.token === "string" && req.query.token.trim().length > 0
+        ? req.query.token.trim()
+        : null;
+
+    if (!token) {
+      res.status(400).json({ error: "Missing download token" });
+      return;
+    }
+
+    const entry = downloadTokenStore.consumeToken(token);
+    if (!entry) {
+      res.status(403).json({ error: "Invalid or expired token" });
+      return;
+    }
+
+    if (entry.kind === "remote") {
+      let remoteResponse: Response;
+      try {
+        remoteResponse = await fetch(
+          `http://127.0.0.1:${entry.tunnelPort}/api/files/download?token=${encodeURIComponent(entry.remoteToken)}`,
+        );
+      } catch (err) {
+        logger.error({ err, hostAlias: entry.hostAlias }, "Failed to fetch remote download");
+        res.status(502).json({ error: "Failed to fetch remote file" });
+        return;
+      }
+
+      res.status(remoteResponse.status);
+      remoteResponse.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      if (!remoteResponse.body) {
+        res.end();
+        return;
+      }
+
+      const stream = Readable.fromWeb(remoteResponse.body as any);
+      stream.on("error", (err) => {
+        logger.error({ err, hostAlias: entry.hostAlias }, "Failed to proxy remote download");
+        if (!res.headersSent) {
+          res.status(502).json({ error: "Failed to read remote file" });
+        } else {
+          res.end();
+        }
+      });
+      stream.pipe(res);
+      return;
+    }
+
+    try {
+      const fileStats = await stat(entry.absolutePath);
+      if (!fileStats.isFile()) {
+        res.status(404).json({ error: "File not found" });
+        return;
+      }
+
+      const safeFileName = entry.fileName.replace(/["\r\n]/g, "_");
+      res.setHeader("Content-Type", entry.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
+      res.setHeader("Content-Length", entry.size.toString());
+
+      const stream = createReadStream(entry.absolutePath);
+      stream.on("error", (err) => {
+        logger.error({ err }, "Failed to stream download");
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to read file" });
+        } else {
+          res.end();
+        }
+      });
+      stream.pipe(res);
+    } catch (err) {
+      logger.error({ err }, "Failed to download file");
+      if (!res.headersSent) {
+        res.status(404).json({ error: "File not found" });
+      }
+    }
+  };
 }
 
 export type PaseoOpenAIConfig = OpenAiSpeechProviderConfig;
@@ -297,80 +385,7 @@ export async function createPaseoDaemon(
       });
     });
 
-    app.get("/api/files/download", async (req, res) => {
-      const token =
-        typeof req.query.token === "string" && req.query.token.trim().length > 0
-          ? req.query.token.trim()
-          : null;
-
-      if (!token) {
-        res.status(400).json({ error: "Missing download token" });
-        return;
-      }
-
-      const entry = downloadTokenStore.consumeToken(token);
-      if (!entry) {
-        res.status(403).json({ error: "Invalid or expired token" });
-        return;
-      }
-
-      try {
-        if (entry.kind === "remote") {
-          const remoteResponse = await fetch(
-            `http://127.0.0.1:${entry.tunnelPort}/api/files/download?token=${encodeURIComponent(entry.remoteToken)}`,
-          );
-
-          res.status(remoteResponse.status);
-          remoteResponse.headers.forEach((value, key) => {
-            res.setHeader(key, value);
-          });
-
-          if (!remoteResponse.body) {
-            res.end();
-            return;
-          }
-
-          const stream = Readable.fromWeb(remoteResponse.body as any);
-          stream.on("error", (err) => {
-            logger.error({ err, hostAlias: entry.hostAlias }, "Failed to proxy remote download");
-            if (!res.headersSent) {
-              res.status(502).json({ error: "Failed to read remote file" });
-            } else {
-              res.end();
-            }
-          });
-          stream.pipe(res);
-          return;
-        }
-
-        const fileStats = await stat(entry.absolutePath);
-        if (!fileStats.isFile()) {
-          res.status(404).json({ error: "File not found" });
-          return;
-        }
-
-        const safeFileName = entry.fileName.replace(/["\r\n]/g, "_");
-        res.setHeader("Content-Type", entry.mimeType);
-        res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
-        res.setHeader("Content-Length", entry.size.toString());
-
-        const stream = createReadStream(entry.absolutePath);
-        stream.on("error", (err) => {
-          logger.error({ err }, "Failed to stream download");
-          if (!res.headersSent) {
-            res.status(500).json({ error: "Failed to read file" });
-          } else {
-            res.end();
-          }
-        });
-        stream.pipe(res);
-      } catch (err) {
-        logger.error({ err }, "Failed to download file");
-        if (!res.headersSent) {
-          res.status(404).json({ error: "File not found" });
-        }
-      }
-    });
+    app.get("/api/files/download", createFileDownloadHandler(downloadTokenStore, logger));
 
     const httpServer = createHTTPServer(app);
 

@@ -239,7 +239,12 @@ function clientSupportsFlexibleEditorIds(appVersion: string | null): boolean {
 }
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
-const REMOTE_RESPONSE_TIMEOUT_MS = 15_000;
+const REMOTE_DOWNLOAD_TOKEN_BRIDGE_TIMEOUT_MS = 15_000;
+const SUPPRESSED_REMOTE_DOWNLOAD_TOKEN_BRIDGE_TTL_MS = 30_000;
+
+function buildRemoteDownloadTokenBridgeKey(hostAlias: string, requestId: string): string {
+  return `${hostAlias}\u0000${requestId}`;
+}
 
 function deriveInitialAgentTitle(prompt: string): string | null {
   const firstContentLine = prompt
@@ -348,8 +353,9 @@ type WorkspaceUpdatesSubscriptionState = {
   pendingUpdatesByWorkspaceId: Map<string, WorkspaceUpdatePayload>;
   lastEmittedByWorkspaceId: Map<string, WorkspaceUpdatePayload>;
 };
-type PendingRemoteResponseWaiter = {
-  responseType: string;
+type PendingRemoteDownloadTokenBridge = {
+  hostAlias: string;
+  requestId: string;
   resolve: (msg: Record<string, unknown>) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
@@ -658,7 +664,11 @@ export class Session {
   private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
   private readonly remoteAgentProxies = new Map<string, RemoteAgentProxy>();
   private readonly remoteAgentProxyPromises = new Map<string, Promise<RemoteAgentProxy>>();
-  private readonly pendingRemoteResponses = new Map<string, PendingRemoteResponseWaiter>();
+  private readonly pendingRemoteDownloadTokenBridges = new Map<
+    string,
+    PendingRemoteDownloadTokenBridge
+  >();
+  private readonly suppressedRemoteDownloadTokenBridges = new Map<string, number>();
   private readonly daemonVersion: string | null;
 
   constructor(options: SessionOptions) {
@@ -5056,20 +5066,26 @@ export class Session {
         return;
       }
 
+      let remoteResponsePromise: Promise<Record<string, unknown>>;
+      try {
+        remoteResponsePromise = this.waitForRemoteDownloadTokenResponse(hostAlias, requestId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emitFileDownloadTokenErrorResponse(request, message);
+        return;
+      }
+
       const remoteRequest = {
         ...request,
         cwd: stripSshNamespace(workspaceCwd),
       };
-      const remoteResponsePromise = this.waitForRemoteResponse(
-        requestId,
-        "file_download_token_response",
-      );
 
       try {
         proxy.sendSessionMessage(remoteRequest);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.clearPendingRemoteResponse(
+        this.failRemoteDownloadTokenResponseBridge(
+          hostAlias,
           requestId,
           new Error(`Failed to request remote download token from "${hostAlias}": ${message}`),
         );
@@ -7849,27 +7865,28 @@ export class Session {
     return true;
   }
 
-  private waitForRemoteResponse(
+  private waitForRemoteDownloadTokenResponse(
+    hostAlias: string,
     requestId: string,
-    responseType: string,
   ): Promise<Record<string, unknown>> {
-    const existing = this.pendingRemoteResponses.get(requestId);
-    if (existing) {
-      clearTimeout(existing.timeout);
-      existing.reject(
-        new Error(`Duplicate pending remote response waiter for request ${requestId}`),
+    this.pruneSuppressedRemoteDownloadTokenBridges();
+    const bridgeKey = buildRemoteDownloadTokenBridgeKey(hostAlias, requestId);
+    if (this.pendingRemoteDownloadTokenBridges.has(bridgeKey)) {
+      throw new Error(
+        `A remote download token request is already pending for "${hostAlias}" with requestId "${requestId}"`,
       );
-      this.pendingRemoteResponses.delete(requestId);
     }
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.pendingRemoteResponses.delete(requestId);
-        reject(new Error(`Timed out waiting for remote ${responseType}`));
-      }, REMOTE_RESPONSE_TIMEOUT_MS);
+        this.pendingRemoteDownloadTokenBridges.delete(bridgeKey);
+        this.suppressRemoteDownloadTokenBridge(bridgeKey);
+        reject(new Error("Timed out waiting for remote file_download_token_response"));
+      }, REMOTE_DOWNLOAD_TOKEN_BRIDGE_TIMEOUT_MS);
 
-      this.pendingRemoteResponses.set(requestId, {
-        responseType,
+      this.pendingRemoteDownloadTokenBridges.set(bridgeKey, {
+        hostAlias,
+        requestId,
         resolve,
         reject,
         timeout,
@@ -7877,34 +7894,66 @@ export class Session {
     });
   }
 
-  private clearPendingRemoteResponse(requestId: string, error: Error): void {
-    const waiter = this.pendingRemoteResponses.get(requestId);
-    if (!waiter) {
+  private failRemoteDownloadTokenResponseBridge(
+    hostAlias: string,
+    requestId: string,
+    error: Error,
+  ): void {
+    const bridgeKey = buildRemoteDownloadTokenBridgeKey(hostAlias, requestId);
+    const bridge = this.pendingRemoteDownloadTokenBridges.get(bridgeKey);
+    if (!bridge) {
       return;
     }
 
-    clearTimeout(waiter.timeout);
-    this.pendingRemoteResponses.delete(requestId);
-    waiter.reject(error);
+    clearTimeout(bridge.timeout);
+    this.pendingRemoteDownloadTokenBridges.delete(bridgeKey);
+    this.suppressRemoteDownloadTokenBridge(bridgeKey);
+    bridge.reject(error);
   }
 
-  private resolvePendingRemoteResponse(msg: Record<string, unknown>): boolean {
-    const responseType = typeof msg.type === "string" ? msg.type : null;
+  private resolveRemoteDownloadTokenResponseBridge(
+    hostAlias: string,
+    msg: Record<string, unknown>,
+  ): boolean {
     const payload = msg.payload as Record<string, unknown> | undefined;
     const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
-    if (!responseType || !requestId) {
+    if (!requestId) {
       return false;
     }
 
-    const waiter = this.pendingRemoteResponses.get(requestId);
-    if (!waiter || waiter.responseType !== responseType) {
+    const bridgeKey = buildRemoteDownloadTokenBridgeKey(hostAlias, requestId);
+    const bridge = this.pendingRemoteDownloadTokenBridges.get(bridgeKey);
+    if (!bridge) {
       return false;
     }
 
-    clearTimeout(waiter.timeout);
-    this.pendingRemoteResponses.delete(requestId);
-    waiter.resolve(msg);
+    clearTimeout(bridge.timeout);
+    this.pendingRemoteDownloadTokenBridges.delete(bridgeKey);
+    bridge.resolve(msg);
     return true;
+  }
+
+  private shouldSuppressRemoteDownloadTokenResponse(hostAlias: string, requestId: string): boolean {
+    this.pruneSuppressedRemoteDownloadTokenBridges();
+    const bridgeKey = buildRemoteDownloadTokenBridgeKey(hostAlias, requestId);
+    return this.suppressedRemoteDownloadTokenBridges.has(bridgeKey);
+  }
+
+  private suppressRemoteDownloadTokenBridge(bridgeKey: string): void {
+    this.pruneSuppressedRemoteDownloadTokenBridges();
+    this.suppressedRemoteDownloadTokenBridges.set(
+      bridgeKey,
+      Date.now() + SUPPRESSED_REMOTE_DOWNLOAD_TOKEN_BRIDGE_TTL_MS,
+    );
+  }
+
+  private pruneSuppressedRemoteDownloadTokenBridges(): void {
+    const now = Date.now();
+    for (const [bridgeKey, expiresAt] of this.suppressedRemoteDownloadTokenBridges) {
+      if (expiresAt <= now) {
+        this.suppressedRemoteDownloadTokenBridges.delete(bridgeKey);
+      }
+    }
   }
 
   private emitRemoteWorkspaceUnavailableResponse(
@@ -8226,9 +8275,20 @@ export class Session {
       "Remote agent response received, forwarding to client",
     );
     const rewritten = rewriteRemoteSessionMessage(hostAlias, remoteMsg);
-    const claimedByWaiter = this.resolvePendingRemoteResponse(rewritten);
-    if (claimedByWaiter && rewritten.type === "file_download_token_response") {
-      return;
+    if (rewritten.type === "file_download_token_response") {
+      const requestId =
+        typeof (rewritten.payload as Record<string, unknown> | undefined)?.requestId === "string"
+          ? ((rewritten.payload as Record<string, unknown>).requestId as string)
+          : null;
+      if (requestId) {
+        const claimedByBridge = this.resolveRemoteDownloadTokenResponseBridge(hostAlias, rewritten);
+        if (
+          claimedByBridge ||
+          this.shouldSuppressRemoteDownloadTokenResponse(hostAlias, requestId)
+        ) {
+          return;
+        }
+      }
     }
     this.emit(rewritten as any);
   }
@@ -8625,11 +8685,17 @@ export class Session {
     }
     this.workspaceGitSubscriptions.clear();
 
-    for (const [requestId, waiter] of this.pendingRemoteResponses) {
-      clearTimeout(waiter.timeout);
-      waiter.reject(new Error(`Session closed while waiting for remote response ${requestId}`));
+    for (const [bridgeKey, bridge] of this.pendingRemoteDownloadTokenBridges) {
+      clearTimeout(bridge.timeout);
+      this.suppressRemoteDownloadTokenBridge(bridgeKey);
+      bridge.reject(
+        new Error(
+          `Session closed while waiting for remote download token response ${bridge.requestId}`,
+        ),
+      );
     }
-    this.pendingRemoteResponses.clear();
+    this.pendingRemoteDownloadTokenBridges.clear();
+    this.pruneSuppressedRemoteDownloadTokenBridges();
 
     if (this.remoteHostStatusListener && this.remoteHostManager) {
       this.remoteHostManager.removeListener("status_update", this.remoteHostStatusListener);
