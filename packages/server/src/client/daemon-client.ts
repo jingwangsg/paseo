@@ -3461,6 +3461,17 @@ export class DaemonClient {
     });
   }
 
+  async openRemoteProject(input: {
+    hostAlias: string;
+    cwd: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "open_remote_project_request" as const, ...input },
+      responseType: "open_remote_project_response" as const,
+      timeout: 30_000,
+    });
+  }
+
   onTerminalStreamEvent(handler: (event: TerminalStreamEvent) => void): () => void {
     this.terminalStreamListeners.add(handler);
     return () => {
