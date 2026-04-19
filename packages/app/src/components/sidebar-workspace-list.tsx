@@ -69,6 +69,7 @@ import { useToast } from "@/contexts/toast-context";
 import { useCheckoutGitActionsStore } from "@/stores/checkout-git-actions-store";
 import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
 import { decideLongPressMove } from "@/utils/sidebar-gesture-arbitration";
+import { OpenRemoteProjectModal } from "@/components/open-remote-project-modal";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
@@ -1627,6 +1628,7 @@ export function SidebarWorkspaceList({
   const isMobile = useIsCompactFormFactor();
   const pathname = usePathname();
   const activeWorkspaceSelection = useNavigationActiveWorkspaceSelection();
+  const [openProjectHostAlias, setOpenProjectHostAlias] = useState<string | null>(null);
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
   const creatingWorkspaceTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
@@ -1931,6 +1933,11 @@ export function SidebarWorkspaceList({
               projectCount={group.projects.length}
               error={group.hostAlias ? remoteHosts.get(group.hostAlias)?.error : undefined}
               onRetry={group.hostAlias ? () => handleRetryHost(group.hostAlias!) : undefined}
+              onAddProject={
+                group.hostAlias && group.status === "ready"
+                  ? () => setOpenProjectHostAlias(group.hostAlias)
+                  : undefined
+              }
             />
             {group.projects.length > 0 ? (
               <DraggableList
@@ -1963,6 +1970,14 @@ export function SidebarWorkspaceList({
         />
       )}
       {listFooterComponent}
+      {openProjectHostAlias && serverId ? (
+        <OpenRemoteProjectModal
+          visible={true}
+          onClose={() => setOpenProjectHostAlias(null)}
+          serverId={serverId}
+          hostAlias={openProjectHostAlias}
+        />
+      ) : null}
     </>
   );
 

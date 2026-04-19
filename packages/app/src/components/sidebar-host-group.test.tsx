@@ -21,7 +21,7 @@ vi.mock("react-native-unistyles", () => {
       },
     },
     spacing: { 1: 4, 2: 8, 3: 12 },
-    fontSize: { xs: 12 },
+    fontSize: { xs: 12, sm: 14 },
     fontWeight: { medium: "500" },
   };
   return {
@@ -118,5 +118,39 @@ describe("SidebarHostGroup", () => {
     );
     expect(markup).toContain("Failed");
     expect(markup).toContain("Tap to retry");
+  });
+
+  test("shows add-project button for ready remote host", () => {
+    const onAddProject = vi.fn();
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup
+        hostAlias="osmo_9000"
+        status="ready"
+        projectCount={0}
+        onAddProject={onAddProject}
+      />,
+    );
+    expect(markup).toContain("+");
+    expect(markup).toContain("Add project to osmo_9000");
+  });
+
+  test("does not show add-project button for local host", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup hostAlias={null} status="ready" projectCount={3} onAddProject={() => {}} />,
+    );
+    expect(markup).not.toContain("Add project to");
+  });
+
+  test("does not show add-project button for failed host", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup
+        hostAlias="osmo_9000"
+        status="failed"
+        projectCount={0}
+        onAddProject={() => {}}
+      />,
+    );
+    expect(markup).toContain("Tap to retry");
+    expect(markup).not.toContain("Add project to");
   });
 });

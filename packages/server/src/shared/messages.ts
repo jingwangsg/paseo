@@ -1473,6 +1473,13 @@ const DeployRemoteHostRequestSchema = z.object({
   hostAlias: z.string(),
 });
 
+const OpenRemoteProjectRequestSchema = z.object({
+  type: z.literal("open_remote_project_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+  cwd: z.string(),
+});
+
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   VoiceAudioChunkMessageSchema,
   AbortRequestMessageSchema,
@@ -1577,6 +1584,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FetchRemoteHostsRequestSchema,
   RetryRemoteHostRequestSchema,
   DeployRemoteHostRequestSchema,
+  OpenRemoteProjectRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2879,6 +2887,15 @@ const DeployRemoteHostResponseSchema = z.object({
   }),
 });
 
+const OpenRemoteProjectResponseSchema = z.object({
+  type: z.literal("open_remote_project_response"),
+  payload: z.object({
+    requestId: z.string(),
+    success: z.boolean(),
+    error: z.string().optional(),
+  }),
+});
+
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ActivityLogMessageSchema,
   AssistantChunkMessageSchema,
@@ -2987,6 +3004,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   RemoteHostUpdateSchema,
   RetryRemoteHostResponseSchema,
   DeployRemoteHostResponseSchema,
+  OpenRemoteProjectResponseSchema,
 ]);
 
 export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { reconcileRemoteProjects, reconcileRemoteWorkspaces } from "./remote-sync.js";
+import {
+  reconcileRemoteProjects,
+  reconcileRemoteWorkspaces,
+  createRemoteDaemonApi,
+} from "./remote-sync.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../workspace-registry.js";
 
 describe("reconcileRemoteProjects", () => {
@@ -99,5 +103,13 @@ describe("reconcileRemoteWorkspaces", () => {
 
     expect(upserted).toHaveLength(0);
     expect(removed).toEqual(["ssh:osmo_9000:ws:old"]);
+  });
+});
+
+describe("createRemoteDaemonApi", () => {
+  test("returns an object with fetchAll and openProject methods", () => {
+    const api = createRemoteDaemonApi(12345);
+    expect(typeof api.fetchAll).toBe("function");
+    expect(typeof api.openProject).toBe("function");
   });
 });

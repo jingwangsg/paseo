@@ -1913,6 +1913,9 @@ export class Session {
           case "deploy_remote_host_request":
             await this.handleDeployRemoteHost(msg);
             break;
+          case "open_remote_project_request":
+            await this.handleOpenRemoteProject(msg);
+            break;
         }
       } catch (error: any) {
         const err = error instanceof Error ? error : new Error(String(error));
@@ -7661,6 +7664,54 @@ export class Session {
           success: false,
           error: err instanceof Error ? err.message : String(err),
         },
+      });
+    }
+  }
+
+  private async handleOpenRemoteProject(msg: {
+    requestId: string;
+    hostAlias: string;
+    cwd: string;
+  }): Promise<void> {
+    if (!this.remoteHostManager) {
+      this.emit({
+        type: "open_remote_project_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: "Remote host management not available",
+        },
+      });
+      return;
+    }
+
+    const tunnelPort = this.remoteHostManager.getTunnelPort(msg.hostAlias);
+    if (!tunnelPort) {
+      this.emit({
+        type: "open_remote_project_response",
+        payload: {
+          requestId: msg.requestId,
+          success: false,
+          error: `Host ${msg.hostAlias} is not connected`,
+        },
+      });
+      return;
+    }
+
+    try {
+      const { createRemoteDaemonApi } = await import("./remote/remote-sync.js");
+      const api = createRemoteDaemonApi(tunnelPort);
+      await api.openProject(msg.cwd);
+
+      this.emit({
+        type: "open_remote_project_response",
+        payload: { requestId: msg.requestId, success: true },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "open_remote_project_response",
+        payload: { requestId: msg.requestId, success: false, error: message },
       });
     }
   }

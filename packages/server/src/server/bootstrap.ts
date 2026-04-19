@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer as createHTTPServer } from "http";
-import { createReadStream, unlinkSync, existsSync } from "fs";
+import { createReadStream, unlinkSync, existsSync, statSync } from "fs";
 import { stat, readFile } from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname as getHostname } from "node:os";
@@ -101,7 +101,20 @@ import {
   shutdownProviders,
 } from "./agent/provider-registry.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
-import { FileBackedProjectRegistry, FileBackedWorkspaceRegistry } from "./workspace-registry.js";
+import {
+  FileBackedProjectRegistry,
+  FileBackedWorkspaceRegistry,
+  createPersistedProjectRecord,
+  createPersistedWorkspaceRecord,
+} from "./workspace-registry.js";
+import {
+  buildProjectPlacementForCwd,
+  deriveWorkspaceId,
+  deriveProjectKind,
+  deriveProjectRootPath,
+  deriveWorkspaceDisplayName,
+  deriveWorkspaceKind,
+} from "./workspace-registry-model.js";
 import { FileBackedChatService } from "./chat/chat-service.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { LoopService } from "./loop-service.js";
@@ -368,6 +381,61 @@ export async function createPaseoDaemon(
       } catch (err) {
         logger.error({ err }, "Failed to list agents for API");
         res.status(500).json({ error: "Failed to list agents" });
+      }
+    });
+
+    app.post("/api/open-project", async (req, res) => {
+      try {
+        const cwd = req.body?.cwd;
+        if (typeof cwd !== "string" || cwd.trim().length === 0) {
+          res.status(400).json({ error: "Missing or empty 'cwd' field" });
+          return;
+        }
+
+        const resolvedCwd = path.resolve(cwd.trim());
+
+        if (!existsSync(resolvedCwd) || !statSync(resolvedCwd).isDirectory()) {
+          res.status(400).json({ error: `Directory does not exist: ${resolvedCwd}` });
+          return;
+        }
+
+        const placement = await buildProjectPlacementForCwd({
+          cwd: resolvedCwd,
+          workspaceGitService,
+        });
+
+        const now = new Date().toISOString();
+        const workspaceId = deriveWorkspaceId(resolvedCwd, placement.checkout);
+
+        const project = createPersistedProjectRecord({
+          projectId: placement.projectKey,
+          rootPath: deriveProjectRootPath({ cwd: workspaceId, checkout: placement.checkout }),
+          kind: deriveProjectKind(placement.checkout),
+          displayName: placement.projectName,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const workspace = createPersistedWorkspaceRecord({
+          workspaceId,
+          projectId: placement.projectKey,
+          cwd: workspaceId,
+          kind: deriveWorkspaceKind(placement.checkout),
+          displayName: deriveWorkspaceDisplayName({
+            cwd: workspaceId,
+            checkout: placement.checkout,
+          }),
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        await projectRegistry.upsert(project);
+        await workspaceRegistry.upsert(workspace);
+
+        res.json({ workspace, project, error: null });
+      } catch (err) {
+        logger.error({ err }, "Failed to open project");
+        res.status(500).json({ error: "Failed to open project" });
       }
     });
 
@@ -712,7 +780,6 @@ export async function createPaseoDaemon(
 
             remoteHostManager.startScanner();
             logger.info({ elapsed: elapsed() }, "Remote host scanner started");
-
           };
 
           logAndResolve().then(resolve, reject);
