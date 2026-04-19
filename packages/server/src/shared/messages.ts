@@ -1473,6 +1473,13 @@ const DeployRemoteHostRequestSchema = z.object({
   hostAlias: z.string(),
 });
 
+const OpenRemoteProjectRequestSchema = z.object({
+  type: z.literal("open_remote_project_request"),
+  requestId: z.string(),
+  hostAlias: z.string(),
+  cwd: z.string(),
+});
+
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   VoiceAudioChunkMessageSchema,
   AbortRequestMessageSchema,
@@ -2878,13 +2885,6 @@ const DeployRemoteHostResponseSchema = z.object({
     success: z.boolean(),
     error: z.string().optional(),
   }),
-});
-
-const OpenRemoteProjectRequestSchema = z.object({
-  type: z.literal("open_remote_project_request"),
-  requestId: z.string(),
-  hostAlias: z.string(),
-  cwd: z.string(),
 });
 
 const OpenRemoteProjectResponseSchema = z.object({
