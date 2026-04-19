@@ -7487,6 +7487,26 @@ export class Session {
         }
         payload.final = final;
       }
+      // Rewrite terminal IDs in remote responses
+      if (typeof payload.terminalId === "string") {
+        payload.terminalId = rewriteRemoteAgentId(hostAlias, payload.terminalId);
+      }
+      if (payload.terminal && typeof payload.terminal === "object") {
+        const terminal = { ...(payload.terminal as Record<string, unknown>) };
+        if (typeof terminal.id === "string") {
+          terminal.id = rewriteRemoteAgentId(hostAlias, terminal.id);
+        }
+        payload.terminal = terminal;
+      }
+      if (Array.isArray(payload.terminals)) {
+        payload.terminals = (payload.terminals as Record<string, unknown>[]).map((t) => {
+          const terminal = { ...t };
+          if (typeof terminal.id === "string") {
+            terminal.id = rewriteRemoteAgentId(hostAlias, terminal.id);
+          }
+          return terminal;
+        });
+      }
       result.payload = payload;
     }
     return result;
@@ -7505,6 +7525,22 @@ export class Session {
       remoteMsg.agentId = rewriteLocalAgentId(hostAlias, remoteMsg.agentId);
     }
     proxy.sendSessionMessage(remoteMsg);
+  }
+
+  private forwardToRemoteTerminal(terminalId: string, msg: Record<string, unknown>): boolean {
+    const hostAlias = extractHostAliasFromAgentId(terminalId);
+    if (!hostAlias) return false;
+    const proxy = this.remoteAgentProxies.get(hostAlias);
+    if (!proxy?.alive) {
+      this.sessionLogger.warn({ terminalId, hostAlias }, "Remote proxy not available for terminal");
+      return false;
+    }
+    const remoteMsg = { ...msg };
+    if (typeof remoteMsg.terminalId === "string") {
+      remoteMsg.terminalId = rewriteLocalAgentId(hostAlias, remoteMsg.terminalId);
+    }
+    proxy.sendSessionMessage(remoteMsg);
+    return true;
   }
 
   /**
