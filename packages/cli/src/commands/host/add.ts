@@ -10,7 +10,6 @@ import type {
 /** Result type for host add command */
 export interface HostAddResult {
   alias: string;
-  hostname: string;
   status: "added";
 }
 
@@ -19,16 +18,11 @@ export const hostAddSchema: OutputSchema<HostAddResult> = {
   idField: "alias",
   columns: [
     { header: "ALIAS", field: "alias", width: 15 },
-    { header: "HOSTNAME", field: "hostname", width: 25 },
     { header: "STATUS", field: "status", width: 10 },
   ],
 };
 
 export interface HostAddOptions extends CommandOptions {
-  hostname?: string;
-  user?: string;
-  port?: string;
-  identityFile?: string;
   host?: string;
 }
 
@@ -43,16 +37,7 @@ export async function runAddCommand(
     const error: CommandError = {
       code: "MISSING_ALIAS",
       message: "Host alias is required",
-      details: "Usage: paseo host add <alias> --hostname <host>",
-    };
-    throw error;
-  }
-
-  if (!options.hostname || options.hostname.trim().length === 0) {
-    const error: CommandError = {
-      code: "MISSING_HOSTNAME",
-      message: "--hostname is required",
-      details: "Usage: paseo host add <alias> --hostname <host>",
+      details: "Usage: paseo host add <alias>",
     };
     throw error;
   }
@@ -71,22 +56,8 @@ export async function runAddCommand(
   }
 
   try {
-    const port = options.port ? Number.parseInt(options.port, 10) : undefined;
-    if (options.port !== undefined && (Number.isNaN(port) || !port || port <= 0)) {
-      const error: CommandError = {
-        code: "INVALID_PORT",
-        message: `Invalid port: ${options.port}`,
-        details: "Port must be a positive integer",
-      };
-      throw error;
-    }
-
     const result = await client.addRemoteHost({
       hostAlias: alias.trim(),
-      hostname: options.hostname.trim(),
-      user: options.user?.trim(),
-      port,
-      identityFile: options.identityFile?.trim(),
     });
 
     await client.close();
@@ -103,7 +74,6 @@ export async function runAddCommand(
       type: "single",
       data: {
         alias: alias.trim(),
-        hostname: options.hostname.trim(),
         status: "added",
       },
       schema: hostAddSchema,

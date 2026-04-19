@@ -41,7 +41,6 @@ export interface SidebarProjectEntry {
 
 export interface SidebarHostGroupEntry {
   hostAlias: string | null;
-  hostname: string | null;
   status: RemoteHostStatus;
   projects: SidebarProjectEntry[];
 }
@@ -77,7 +76,6 @@ export function groupProjectsByHost(
   // Local group always first
   groups.push({
     hostAlias: null,
-    hostname: null,
     status: "ready",
     projects: localProjects,
   });
@@ -91,7 +89,6 @@ export function groupProjectsByHost(
     const hostInfo = remoteHosts.get(alias);
     groups.push({
       hostAlias: alias,
-      hostname: hostInfo?.hostname ?? null,
       status: hostInfo?.status ?? "registered",
       projects: byAlias.get(alias) ?? [],
     });

@@ -3434,13 +3434,7 @@ export class DaemonClient {
     });
   }
 
-  async addRemoteHost(input: {
-    hostAlias: string;
-    hostname: string;
-    user?: string;
-    port?: number;
-    identityFile?: string;
-  }): Promise<{ success: boolean; error?: string }> {
+  async addRemoteHost(input: { hostAlias: string }): Promise<{ success: boolean; error?: string }> {
     return this.sendCorrelatedSessionRequest({
       message: { type: "add_remote_host_request" as const, ...input },
       responseType: "add_remote_host_response" as const,

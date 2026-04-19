@@ -2,10 +2,6 @@ import { z } from "zod";
 
 export const RemoteHostRecordSchema = z.object({
   hostAlias: z.string(),
-  hostname: z.string(),
-  user: z.string().optional(),
-  port: z.number().optional(),
-  identityFile: z.string().optional(),
   addedAt: z.string(),
 });
 

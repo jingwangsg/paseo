@@ -15,12 +15,8 @@ export function createHostCommand(): Command {
   addJsonAndDaemonHostOptions(
     host
       .command("add")
-      .description("Add a remote SSH host")
-      .argument("<alias>", "Alias for the remote host")
-      .requiredOption("--hostname <host>", "SSH hostname or IP address")
-      .option("--user <user>", "SSH username")
-      .option("--port <port>", "SSH port")
-      .option("--identity-file <path>", "Path to SSH identity file"),
+      .description("Add a remote SSH host (uses ~/.ssh/config for connection details)")
+      .argument("<alias>", "SSH config host alias"),
   ).action(withOutput(runAddCommand));
 
   addJsonAndDaemonHostOptions(

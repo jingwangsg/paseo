@@ -22,7 +22,6 @@ describe("reconcileRemoteProjects", () => {
 
     await reconcileRemoteProjects({
       hostAlias: "osmo_9000",
-      hostname: "192.168.1.100",
       remoteProjects,
       existingMirrorIds: new Set(),
       onUpsert: async (record) => upserted.push(record),
@@ -33,7 +32,6 @@ describe("reconcileRemoteProjects", () => {
     expect(upserted[0].executionHost).toEqual({
       kind: "ssh",
       hostAlias: "osmo_9000",
-      hostname: "192.168.1.100",
     });
     expect(upserted[0].projectId).toBe("ssh:osmo_9000:remote:github.com/user/repo");
   });
@@ -44,7 +42,6 @@ describe("reconcileRemoteProjects", () => {
 
     await reconcileRemoteProjects({
       hostAlias: "osmo_9000",
-      hostname: "192.168.1.100",
       remoteProjects: [],
       existingMirrorIds: new Set(["ssh:osmo_9000:remote:github.com/user/old-repo"]),
       onUpsert: async (record) => upserted.push(record),

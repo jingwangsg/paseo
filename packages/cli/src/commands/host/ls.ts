@@ -5,8 +5,6 @@ import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../
 /** Host list item for display */
 export interface HostListItem {
   alias: string;
-  hostname: string;
-  user: string;
   status: string;
   tunnel: string;
   version: string;
@@ -17,8 +15,6 @@ export const hostLsSchema: OutputSchema<HostListItem> = {
   idField: "alias",
   columns: [
     { header: "ALIAS", field: "alias", width: 15 },
-    { header: "HOSTNAME", field: "hostname", width: 25 },
-    { header: "USER", field: "user", width: 12 },
     {
       header: "STATUS",
       field: "status",
@@ -67,8 +63,6 @@ export async function runLsCommand(
 
     const items: HostListItem[] = response.hosts.map((h) => ({
       alias: h.hostAlias,
-      hostname: h.hostname,
-      user: h.user ?? "-",
       status: h.status,
       tunnel: h.tunnelPort ? String(h.tunnelPort) : "-",
       version: h.daemonVersion ?? "-",

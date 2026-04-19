@@ -209,10 +209,6 @@ export const ExecutionHostSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ssh"),
     hostAlias: z.string(),
-    hostname: z.string(),
-    user: z.string().optional(),
-    port: z.number().optional(),
-    identityFile: z.string().optional(),
   }),
 ]);
 
@@ -1452,10 +1448,6 @@ const AddRemoteHostRequestSchema = z.object({
   type: z.literal("add_remote_host_request"),
   requestId: z.string(),
   hostAlias: z.string(),
-  hostname: z.string(),
-  user: z.string().optional(),
-  port: z.number().optional(),
-  identityFile: z.string().optional(),
 });
 
 const RemoveRemoteHostRequestSchema = z.object({
@@ -2829,9 +2821,6 @@ export const TerminalStreamExitSchema = z.object({
 
 const RemoteHostStatusPayloadSchema = z.object({
   hostAlias: z.string(),
-  hostname: z.string(),
-  user: z.string().optional(),
-  port: z.number().optional(),
   status: z.enum(["registered", "connecting", "deploying", "ready", "unreachable", "failed"]),
   tunnelPort: z.number().nullable().optional(),
   daemonVersion: z.string().nullable().optional(),

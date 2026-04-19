@@ -14,40 +14,15 @@ describe("ExecutionHostSchema", () => {
     const result = ExecutionHostSchema.parse({
       kind: "ssh",
       hostAlias: "devbox",
-      hostname: "192.168.1.100",
     });
     expect(result).toEqual({
       kind: "ssh",
       hostAlias: "devbox",
-      hostname: "192.168.1.100",
     });
-  });
-
-  test("parses ssh host with all optional fields", () => {
-    const result = ExecutionHostSchema.parse({
-      kind: "ssh",
-      hostAlias: "devbox",
-      hostname: "192.168.1.100",
-      user: "jing",
-      port: 2222,
-      identityFile: "~/.ssh/id_ed25519",
-    });
-    expect(result).toEqual({
-      kind: "ssh",
-      hostAlias: "devbox",
-      hostname: "192.168.1.100",
-      user: "jing",
-      port: 2222,
-      identityFile: "~/.ssh/id_ed25519",
-    });
-  });
-
-  test("rejects ssh host missing hostname", () => {
-    expect(() => ExecutionHostSchema.parse({ kind: "ssh", hostAlias: "devbox" })).toThrow();
   });
 
   test("rejects ssh host missing hostAlias", () => {
-    expect(() => ExecutionHostSchema.parse({ kind: "ssh", hostname: "192.168.1.100" })).toThrow();
+    expect(() => ExecutionHostSchema.parse({ kind: "ssh" })).toThrow();
   });
 
   test("rejects missing kind", () => {

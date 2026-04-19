@@ -9,13 +9,12 @@ export function mirrorProjectId(hostAlias: string, remoteProjectId: string): str
 
 export async function reconcileRemoteProjects(options: {
   hostAlias: string;
-  hostname: string;
   remoteProjects: PersistedProjectRecord[];
   existingMirrorIds: Set<string>;
   onUpsert: (record: PersistedProjectRecord) => Promise<void> | void;
   onRemove: (projectId: string) => Promise<void> | void;
 }): Promise<void> {
-  const { hostAlias, hostname, remoteProjects, existingMirrorIds, onUpsert, onRemove } = options;
+  const { hostAlias, remoteProjects, existingMirrorIds, onUpsert, onRemove } = options;
   const seenIds = new Set<string>();
 
   for (const remoteProject of remoteProjects) {
@@ -28,7 +27,6 @@ export async function reconcileRemoteProjects(options: {
       executionHost: {
         kind: "ssh",
         hostAlias,
-        hostname,
       },
     });
   }
@@ -111,7 +109,6 @@ export class RemoteSyncService {
 
   startSyncForHost(options: {
     hostAlias: string;
-    hostname: string;
     tunnelPort: number;
     projectRegistry: {
       list(): Promise<PersistedProjectRecord[]>;
@@ -124,7 +121,7 @@ export class RemoteSyncService {
       remove(id: string): Promise<void>;
     };
   }): void {
-    const { hostAlias, hostname, tunnelPort, projectRegistry, workspaceRegistry } = options;
+    const { hostAlias, tunnelPort, projectRegistry, workspaceRegistry } = options;
 
     this.stopSyncForHost(hostAlias);
 
@@ -158,7 +155,6 @@ export class RemoteSyncService {
 
         await reconcileRemoteProjects({
           hostAlias,
-          hostname,
           remoteProjects: remote.projects,
           existingMirrorIds,
           onUpsert: (record) => {

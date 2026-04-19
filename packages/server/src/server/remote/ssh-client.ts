@@ -1,10 +1,8 @@
 import { spawn } from "node:child_process";
 
 export interface SshClientConfig {
+  /** SSH config host alias or hostname */
   hostname: string;
-  user?: string;
-  port?: number;
-  identityFile?: string;
   connectTimeoutSec?: number;
 }
 
@@ -37,17 +35,8 @@ export class SshClient {
       `ConnectTimeout=${this.config.connectTimeoutSec ?? 10}`,
       "-o",
       "StrictHostKeyChecking=accept-new",
+      this.config.hostname,
     ];
-    if (this.config.user) {
-      args.push("-l", this.config.user);
-    }
-    if (this.config.port) {
-      args.push("-p", String(this.config.port));
-    }
-    if (this.config.identityFile) {
-      args.push("-i", this.config.identityFile);
-    }
-    args.push(this.config.hostname);
     return args;
   }
 

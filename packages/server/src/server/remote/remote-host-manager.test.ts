@@ -30,10 +30,7 @@ describe("RemoteHostManager", () => {
       localVersion: "1.0.0",
     });
 
-    await manager.addHost({
-      hostAlias: "devbox",
-      hostname: "192.168.1.100",
-    });
+    await manager.addHost("devbox");
 
     const statuses = manager.listStatuses();
     expect(statuses).toHaveLength(1);
@@ -42,9 +39,7 @@ describe("RemoteHostManager", () => {
   });
 
   test("removeHost clears state and registry", async () => {
-    const registry = stubRegistry([
-      { hostAlias: "devbox", hostname: "192.168.1.100", addedAt: "2026-04-18T00:00:00.000Z" },
-    ]);
+    const registry = stubRegistry([{ hostAlias: "devbox", addedAt: "2026-04-18T00:00:00.000Z" }]);
     const manager = new RemoteHostManager({
       registry,
       logger: SILENT_LOGGER,
@@ -77,9 +72,7 @@ describe("RemoteHostManager", () => {
       localVersion: "1.0.0",
     });
 
-    await expect(
-      manager.addHost({ hostAlias: "host:alias", hostname: "192.168.1.100" }),
-    ).rejects.toThrow("must not be empty or contain");
+    await expect(manager.addHost("host:alias")).rejects.toThrow("must not be empty or contain");
   });
 
   test("addHost rejects aliases containing slashes", async () => {
@@ -90,9 +83,7 @@ describe("RemoteHostManager", () => {
       localVersion: "1.0.0",
     });
 
-    await expect(
-      manager.addHost({ hostAlias: "host/alias", hostname: "192.168.1.100" }),
-    ).rejects.toThrow("must not be empty or contain");
+    await expect(manager.addHost("host/alias")).rejects.toThrow("must not be empty or contain");
   });
 
   test("addHost rejects empty aliases", async () => {
@@ -103,20 +94,13 @@ describe("RemoteHostManager", () => {
       localVersion: "1.0.0",
     });
 
-    await expect(manager.addHost({ hostAlias: "", hostname: "192.168.1.100" })).rejects.toThrow(
-      "must not be empty or contain",
-    );
+    await expect(manager.addHost("")).rejects.toThrow("must not be empty or contain");
   });
 
   test("initialize loads hosts from registry as registered", async () => {
     const registry = stubRegistry([
-      { hostAlias: "devbox", hostname: "192.168.1.100", addedAt: "2026-04-18T00:00:00.000Z" },
-      {
-        hostAlias: "gpu",
-        hostname: "10.0.0.5",
-        user: "admin",
-        addedAt: "2026-04-18T00:00:00.000Z",
-      },
+      { hostAlias: "devbox", addedAt: "2026-04-18T00:00:00.000Z" },
+      { hostAlias: "gpu", addedAt: "2026-04-18T00:00:00.000Z" },
     ]);
     const manager = new RemoteHostManager({
       registry,

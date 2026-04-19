@@ -25,20 +25,15 @@ describe("RemoteHostRegistry", () => {
   test("add and get a host", async () => {
     await registry.upsert({
       hostAlias: "devbox",
-      hostname: "192.168.1.100",
-      user: "jing",
       addedAt: "2026-04-18T00:00:00.000Z",
     });
     const host = await registry.get("devbox");
     expect(host?.hostAlias).toBe("devbox");
-    expect(host?.hostname).toBe("192.168.1.100");
-    expect(host?.user).toBe("jing");
   });
 
   test("remove a host", async () => {
     await registry.upsert({
       hostAlias: "devbox",
-      hostname: "192.168.1.100",
       addedAt: "2026-04-18T00:00:00.000Z",
     });
     await registry.remove("devbox");
@@ -49,7 +44,6 @@ describe("RemoteHostRegistry", () => {
   test("persists across reloads", async () => {
     await registry.upsert({
       hostAlias: "devbox",
-      hostname: "192.168.1.100",
       addedAt: "2026-04-18T00:00:00.000Z",
     });
 

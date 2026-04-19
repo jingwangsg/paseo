@@ -464,7 +464,6 @@ export async function createPaseoDaemon(
       if (!state) return;
       remoteSyncService.startSyncForHost({
         hostAlias,
-        hostname: state.record.hostname,
         tunnelPort,
         projectRegistry,
         workspaceRegistry,

@@ -11,28 +11,10 @@ describe("SshClient", () => {
     expect(args).toContain("devbox");
   });
 
-  test("buildSshArgs includes user when specified", () => {
-    const client = new SshClient({ hostname: "devbox", user: "jing" });
+  test("buildSshArgs uses SSH config alias as hostname", () => {
+    const client = new SshClient({ hostname: "osmo_9000" });
     const args = client.buildSshArgs();
-    expect(args).toContain("-l");
-    expect(args).toContain("jing");
-  });
-
-  test("buildSshArgs includes port when specified", () => {
-    const client = new SshClient({ hostname: "devbox", port: 2222 });
-    const args = client.buildSshArgs();
-    expect(args).toContain("-p");
-    expect(args).toContain("2222");
-  });
-
-  test("buildSshArgs includes identity file when specified", () => {
-    const client = new SshClient({
-      hostname: "devbox",
-      identityFile: "~/.ssh/id_ed25519",
-    });
-    const args = client.buildSshArgs();
-    expect(args).toContain("-i");
-    expect(args).toContain("~/.ssh/id_ed25519");
+    expect(args).toContain("osmo_9000");
   });
 });
 

@@ -3,12 +3,10 @@ import { createServer } from "node:net";
 import type { Logger } from "pino";
 
 export interface TunnelConfig {
+  /** SSH config host alias or hostname */
   hostname: string;
   localPort: number;
   remotePort: number;
-  user?: string;
-  port?: number;
-  identityFile?: string;
 }
 
 export function buildTunnelArgs(config: TunnelConfig): string[] {
@@ -31,15 +29,6 @@ export function buildTunnelArgs(config: TunnelConfig): string[] {
     "-o",
     "ServerAliveCountMax=3",
   ];
-  if (config.user) {
-    args.push("-l", config.user);
-  }
-  if (config.port) {
-    args.push("-p", String(config.port));
-  }
-  if (config.identityFile) {
-    args.push("-i", config.identityFile);
-  }
   args.push(config.hostname);
   return args;
 }

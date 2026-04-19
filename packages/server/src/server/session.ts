@@ -7473,14 +7473,7 @@ export class Session {
   // Remote host management handlers
   // ---------------------------------------------------------------------------
 
-  private async handleAddRemoteHost(msg: {
-    requestId: string;
-    hostAlias: string;
-    hostname: string;
-    user?: string;
-    port?: number;
-    identityFile?: string;
-  }): Promise<void> {
+  private async handleAddRemoteHost(msg: { requestId: string; hostAlias: string }): Promise<void> {
     if (!this.remoteHostManager) {
       this.emit({
         type: "add_remote_host_response",
@@ -7493,13 +7486,7 @@ export class Session {
       return;
     }
     try {
-      await this.remoteHostManager.addHost({
-        hostAlias: msg.hostAlias,
-        hostname: msg.hostname,
-        user: msg.user,
-        port: msg.port,
-        identityFile: msg.identityFile,
-      });
+      await this.remoteHostManager.addHost(msg.hostAlias);
       this.emit({
         type: "add_remote_host_response",
         payload: { requestId: msg.requestId, success: true },

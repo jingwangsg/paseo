@@ -18,9 +18,6 @@ export interface RemoteHostManagerConfig {
 
 export interface RemoteHostStatusEntry {
   hostAlias: string;
-  hostname: string;
-  user?: string;
-  port?: number;
   status: RemoteHostConnectionStatus;
   tunnelPort: number | null;
   daemonVersion: string | null;
@@ -91,32 +88,20 @@ export class RemoteHostManager extends EventEmitter {
     }
   }
 
-  async addHost(input: {
-    hostAlias: string;
-    hostname: string;
-    user?: string;
-    port?: number;
-    identityFile?: string;
-  }): Promise<void> {
+  async addHost(hostAlias: string): Promise<void> {
     // Validate alias: no colons (used as delimiter in mirror IDs), no slashes, non-empty
-    if (!input.hostAlias || /[:/]/.test(input.hostAlias)) {
-      throw new Error(
-        `Invalid host alias "${input.hostAlias}": must not be empty or contain ':' or '/'`,
-      );
+    if (!hostAlias || /[:/]/.test(hostAlias)) {
+      throw new Error(`Invalid host alias "${hostAlias}": must not be empty or contain ':' or '/'`);
     }
 
     const record: RemoteHostRecord = {
-      hostAlias: input.hostAlias,
-      hostname: input.hostname,
-      user: input.user,
-      port: input.port,
-      identityFile: input.identityFile,
+      hostAlias,
       addedAt: new Date().toISOString(),
     };
 
     await this.registry.upsert(record);
 
-    this.hosts.set(input.hostAlias, {
+    this.hosts.set(hostAlias, {
       record,
       status: "registered",
       tunnelPort: null,
@@ -125,11 +110,11 @@ export class RemoteHostManager extends EventEmitter {
       generation: ++this.nextGeneration,
     });
 
-    this.emitStatusUpdate(input.hostAlias);
+    this.emitStatusUpdate(hostAlias);
 
     setImmediate(() => {
-      this.triggerConnect(input.hostAlias).catch((err) => {
-        this.logger.error({ err, hostAlias: input.hostAlias }, "Connect after add failed");
+      this.triggerConnect(hostAlias).catch((err) => {
+        this.logger.error({ err, hostAlias }, "Connect after add failed");
       });
     });
   }
@@ -160,9 +145,6 @@ export class RemoteHostManager extends EventEmitter {
   listStatuses(): RemoteHostStatusEntry[] {
     return Array.from(this.hosts.values()).map((state) => ({
       hostAlias: state.record.hostAlias,
-      hostname: state.record.hostname,
-      user: state.record.user,
-      port: state.record.port,
       status: state.status,
       tunnelPort: this.getTunnelPort(state.record.hostAlias),
       daemonVersion: state.daemonVersion,
@@ -182,12 +164,7 @@ export class RemoteHostManager extends EventEmitter {
     this.setStatus(alias, "connecting");
 
     try {
-      const ssh = new SshClient({
-        hostname: state.record.hostname,
-        user: state.record.user,
-        port: state.record.port,
-        identityFile: state.record.identityFile,
-      });
+      const ssh = new SshClient({ hostname: state.record.hostAlias });
 
       const reachable = await ssh.testConnection();
 
@@ -221,13 +198,7 @@ export class RemoteHostManager extends EventEmitter {
       }
 
       const tunnel = await startTunnel(
-        {
-          hostname: state.record.hostname,
-          remotePort: REMOTE_DAEMON_PORT,
-          user: state.record.user,
-          port: state.record.port,
-          identityFile: state.record.identityFile,
-        },
+        { hostname: state.record.hostAlias, remotePort: REMOTE_DAEMON_PORT },
         this.logger,
       );
 
@@ -279,9 +250,6 @@ export class RemoteHostManager extends EventEmitter {
     if (!state) return;
     this.emit("status_update", {
       hostAlias: state.record.hostAlias,
-      hostname: state.record.hostname,
-      user: state.record.user,
-      port: state.record.port,
       status: state.status,
       tunnelPort: this.getTunnelPort(alias),
       daemonVersion: state.daemonVersion,

@@ -14,22 +14,6 @@ describe("SSH Tunnel", () => {
     expect(args).toContain("ExitOnForwardFailure=yes");
     expect(args).toContain("ServerAliveInterval=10");
     expect(args).toContain("ServerAliveCountMax=3");
-  });
-
-  test("buildTunnelArgs includes user and port when specified", () => {
-    const args = buildTunnelArgs({
-      hostname: "devbox",
-      localPort: 41234,
-      remotePort: 6767,
-      user: "jing",
-      port: 2222,
-      identityFile: "~/.ssh/id_ed25519",
-    });
-    expect(args).toContain("-l");
-    expect(args).toContain("jing");
-    expect(args).toContain("-p");
-    expect(args).toContain("2222");
-    expect(args).toContain("-i");
-    expect(args).toContain("~/.ssh/id_ed25519");
+    expect(args).toContain("devbox");
   });
 });
