@@ -18,18 +18,10 @@ export type DirectPipeHostConnection = {
   path: string;
 };
 
-export type RelayHostConnection = {
-  id: string;
-  type: "relay";
-  relayEndpoint: string;
-  daemonPublicKeyB64: string;
-};
-
 export type HostConnection =
   | DirectTcpHostConnection
   | DirectSocketHostConnection
-  | DirectPipeHostConnection
-  | RelayHostConnection;
+  | DirectPipeHostConnection;
 
 export type HostLifecycle = Record<string, never>;
 
@@ -66,13 +58,6 @@ function hostConnectionEquals(left: HostConnection, right: HostConnection): bool
   if (left.type === "directPipe" && right.type === "directPipe") {
     return left.path === right.path;
   }
-  if (left.type === "relay" && right.type === "relay") {
-    return (
-      left.relayEndpoint === right.relayEndpoint &&
-      left.daemonPublicKeyB64 === right.daemonPublicKeyB64
-    );
-  }
-
   return false;
 }
 
@@ -251,22 +236,6 @@ function normalizeStoredConnection(connection: unknown): HostConnection | null {
     const path = String(record.path ?? "").trim();
     return path ? { id: `pipe:${path}`, type: "directPipe", path } : null;
   }
-  if (type === "relay") {
-    try {
-      const relayEndpoint = normalizeHostPort(String(record.relayEndpoint ?? ""));
-      const daemonPublicKeyB64 = String(record.daemonPublicKeyB64 ?? "").trim();
-      if (!daemonPublicKeyB64) return null;
-      return {
-        id: `relay:${relayEndpoint}`,
-        type: "relay",
-        relayEndpoint,
-        daemonPublicKeyB64,
-      };
-    } catch {
-      return null;
-    }
-  }
-
   return null;
 }
 

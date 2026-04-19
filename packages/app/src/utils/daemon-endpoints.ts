@@ -1,7 +1,6 @@
 import { Buffer } from "buffer";
 import {
   buildDaemonWebSocketUrl,
-  buildRelayWebSocketUrl as buildSharedRelayWebSocketUrl,
   deriveLabelFromEndpoint,
   extractHostPortFromWebSocketUrl,
   normalizeHostPort,
@@ -28,8 +27,4 @@ function decodeBase64UrlToUtf8(input: string): string {
 export function decodeOfferFragmentPayload(encoded: string): unknown {
   const json = decodeBase64UrlToUtf8(encoded);
   return JSON.parse(json) as unknown;
-}
-
-export function buildRelayWebSocketUrl(params: { endpoint: string; serverId: string }): string {
-  return buildSharedRelayWebSocketUrl({ ...params, role: "client" });
 }
