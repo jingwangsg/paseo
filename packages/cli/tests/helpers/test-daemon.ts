@@ -37,7 +37,6 @@ export interface TestDaemonContext {
 }
 
 const TEST_DAEMON_ENV_DEFAULTS: Record<string, string> = {
-  PASEO_RELAY_ENABLED: "false",
   PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
   PASEO_DICTATION_ENABLED: process.env.PASEO_DICTATION_ENABLED ?? "0",
   PASEO_VOICE_MODE_ENABLED: process.env.PASEO_VOICE_MODE_ENABLED ?? "0",

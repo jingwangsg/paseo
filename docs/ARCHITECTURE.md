@@ -13,8 +13,8 @@ Your code never leaves your machine. Paseo is local-first.
 └──────┬───────┘    └──────┬──────┘    └──────┬──────┘
        │                   │                  │
        │    WebSocket      │    WebSocket     │    Managed subprocess
-       │    (direct or     │    (direct)      │    + WebSocket
-       │     via relay)    │                  │
+       │    (direct)       │    (direct)      │    + WebSocket
+       │                   │                  │
        └───────────┬───────┴──────────────────┘
                    │
             ┌──────▼──────┐
@@ -37,8 +37,6 @@ Your code never leaves your machine. Paseo is local-first.
 - **App:** Cross-platform Expo client for iOS, Android, web, and the shared UI used by desktop.
 - **CLI:** Terminal interface for agent workflows that can also start and manage the daemon.
 - **Desktop app:** Electron wrapper around the web app that bundles and auto-manages its own daemon.
-- **Relay:** Optional encrypted bridge for remote access without opening ports directly.
-
 ## Packages
 
 ### `packages/server` — The daemon
@@ -49,20 +47,17 @@ The heart of Paseo. A Node.js process that:
 - Manages agent lifecycle (create, run, stop, resume, archive)
 - Streams agent output in real time via a timeline model
 - Exposes an MCP server for agent-to-agent control
-- Optionally connects outbound to a relay for remote access
-
 **Key modules:**
 
 | Module | Responsibility |
 |---|---|
-| `bootstrap.ts` | Daemon initialization: HTTP server, WS server, agent manager, storage, relay |
+| `bootstrap.ts` | Daemon initialization: HTTP server, WS server, agent manager, storage |
 | `websocket-server.ts` | WebSocket connection management, hello/welcome handshake, binary multiplexing |
 | `session.ts` | Per-client session state, timeline subscriptions, terminal operations |
 | `agent/agent-manager.ts` | Agent lifecycle state machine, timeline tracking, subscriber management |
 | `agent/agent-storage.ts` | File-backed JSON persistence at `$PASEO_HOME/agents/` |
 | `agent/mcp-server.ts` | MCP server for sub-agent creation, permissions, timeouts |
 | `providers/` | Provider adapters: Claude (Agent SDK), Codex (AppServer), OpenCode |
-| `relay-transport.ts` | Outbound relay connection with E2E encryption |
 | `client/daemon-client.ts` | Client library for connecting to the daemon (used by CLI and app) |
 
 ### `packages/app` — Mobile + web client (Expo)
@@ -87,17 +82,6 @@ Commander.js CLI with Docker-style commands:
 
 Communicates with the daemon via the same WebSocket protocol as the app.
 
-### `packages/relay` — E2E encrypted relay
-
-Enables remote access when the daemon is behind a firewall.
-
-- ECDH key exchange + AES-256-GCM encryption
-- Relay server is zero-knowledge — it routes encrypted bytes, cannot read content
-- Client and daemon channels with identical API (`createClientChannel`, `createDaemonChannel`)
-- Pairing via QR code transfers the daemon's public key to the client
-
-See [SECURITY.md](../SECURITY.md) for the full threat model.
-
 ### `packages/desktop` — Desktop app (Electron)
 
 Electron wrapper for macOS, Linux, and Windows.
@@ -105,10 +89,6 @@ Electron wrapper for macOS, Linux, and Windows.
 - Can spawn the daemon as a managed subprocess
 - Native file access for workspace integration
 - Same WebSocket client as mobile app
-
-### `packages/website` — Marketing site
-
-TanStack Router + Cloudflare Workers. Serves paseo.sh.
 
 ## WebSocket protocol
 
@@ -189,4 +169,3 @@ $PASEO_HOME/
 
 1. **Local daemon** (default): `paseo daemon start` on `127.0.0.1:6767`
 2. **Managed desktop**: Electron app spawns daemon as subprocess
-3. **Remote + relay**: Daemon behind firewall, relay bridges with E2E encryption

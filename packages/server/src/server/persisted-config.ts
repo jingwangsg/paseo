@@ -243,27 +243,12 @@ export const PersistedConfigSchema = z
           })
           .strict()
           .optional(),
-        relay: z
-          .object({
-            enabled: z.boolean().optional(),
-            endpoint: z.string().optional(),
-            publicEndpoint: z.string().optional(),
-          })
-          .strict()
-          .optional(),
       })
       .strict()
       .transform(({ allowedHosts, ...daemon }) => {
         const hostnames = daemon.hostnames ?? allowedHosts;
         return hostnames === undefined ? daemon : { ...daemon, hostnames };
       })
-      .optional(),
-
-    app: z
-      .object({
-        baseUrl: z.string().optional(),
-      })
-      .strict()
       .optional(),
 
     providers: ProvidersSchema.optional(),
@@ -301,12 +286,6 @@ const DEFAULT_PERSISTED_CONFIG = PersistedConfigSchema.parse({
     cors: {
       allowedOrigins: ["https://app.paseo.sh"],
     },
-    relay: {
-      enabled: true,
-    },
-  },
-  app: {
-    baseUrl: "https://app.paseo.sh",
   },
 }) as PersistedConfig;
 

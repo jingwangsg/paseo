@@ -36,9 +36,6 @@ async function main() {
     process.exit(1);
   }
 
-  if (process.argv.includes("--no-relay")) {
-    config.relayEnabled = false;
-  }
   if (process.argv.includes("--no-mcp")) {
     config.mcpEnabled = false;
   }

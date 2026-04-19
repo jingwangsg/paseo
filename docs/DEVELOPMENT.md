@@ -37,16 +37,6 @@ Check `$PASEO_HOME/daemon.log` for trace-level logs.
 
 ## Build sync gotchas
 
-### Relay → Daemon
-
-When changing `packages/relay/src/*`, rebuild before running the daemon:
-
-```bash
-npm run build --workspace=@getpaseo/relay
-```
-
-The Node daemon imports `@getpaseo/relay` from `packages/relay/dist/*`, not `src/*`.
-
 ### Server → CLI
 
 When changing `packages/server/src/client/*` (especially `daemon-client.ts`) or shared WS protocol types, rebuild before running CLI commands:

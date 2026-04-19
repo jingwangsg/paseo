@@ -10,7 +10,6 @@ export interface DaemonStartOptions {
   listen?: string;
   home?: string;
   foreground?: boolean;
-  relay?: boolean;
   mcp?: boolean;
   injectMcp?: boolean;
   hostnames?: string;
@@ -89,9 +88,6 @@ function envWithHome(home?: string): NodeJS.ProcessEnv {
 
 function buildRunnerArgs(options: DaemonStartOptions): string[] {
   const args: string[] = [];
-  if (options.relay === false) {
-    args.push("--no-relay");
-  }
 
   if (options.mcp === false) {
     args.push("--no-mcp");

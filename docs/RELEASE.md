@@ -7,7 +7,7 @@ All workspaces share one version and release together.
 There are two supported ways to ship from `main`:
 
 1. **Direct stable release**: you are ready to ship the current `main` commit to everyone immediately.
-2. **Release candidate flow**: you want public test builds first, but you are not ready for the website, npm, or production mobile release flows to move yet.
+2. **Release candidate flow**: you want public test builds first, but you are not ready for npm or production mobile release flows to move yet.
 
 ## Standard release (patch)
 
@@ -50,19 +50,13 @@ npm run release:promote        # Promote X.Y.Z-rc.N to stable X.Y.Z
 - RCs publish desktop assets and APKs for testing, but they do not publish npm packages and do not trigger the production web/mobile release flows
 - `release:promote` creates a fresh stable tag like `v0.1.41`; the final release never reuses the RC tag
 - Desktop assets now come from the Electron package at `packages/desktop`
-- **Do NOT create a changelog entry for RCs.** The changelog remains stable-only. RC release notes are generated automatically so the website stays pinned to the latest published stable release.
+- **Do NOT create a changelog entry for RCs.** The changelog remains stable-only. RC release notes are generated automatically.
 
 Use the RC path when you need to:
 
 - test a build manually in a Linux or Windows VM
 - send a build to a user who is hitting a specific problem
 - iterate on `rc.1`, `rc.2`, `rc.3`, and so on before deciding to ship broadly
-
-## Website behavior
-
-- The website download page points to GitHub's latest published **stable** release.
-- Published RC prereleases are public on GitHub Releases, but they do **not** become the website download target.
-- The website only moves when you publish the final stable release tag like `v0.1.41`.
 
 ## Fixing a failed release build
 
@@ -105,7 +99,7 @@ This ensures the checkout ref matches the actual code on `main` with the fix inc
 - `release:prepare` refreshes workspace `node_modules` links to prevent stale types
 - `npm run dev:desktop` and `npm run build:desktop` target the Electron desktop package in `packages/desktop`
 - If `release:publish` partially fails, re-run it — npm skips already-published versions
-- The website uses GitHub's latest published release API for download links, so published RC prereleases do not replace the stable download target.
+- Published RC prereleases do not replace the stable download target on GitHub Releases.
 
 ## Changelog format
 

@@ -3,7 +3,7 @@ import { startCommand } from "./start.js";
 import { runStatusCommand } from "./status.js";
 import { runStopCommand } from "./stop.js";
 import { runRestartCommand } from "./restart.js";
-import { pairCommand } from "./pair.js";
+
 import { withOutput } from "../../output/index.js";
 import { addJsonOption } from "../../utils/command-options.js";
 
@@ -11,7 +11,6 @@ export function createDaemonCommand(): Command {
   const daemon = new Command("daemon").description("Manage the Paseo daemon");
 
   daemon.addCommand(startCommand());
-  daemon.addCommand(pairCommand());
 
   addJsonOption(daemon.command("status").description("Show local daemon status"))
     .option("--home <path>", "Paseo home directory (default: ~/.paseo)")
@@ -32,7 +31,6 @@ export function createDaemonCommand(): Command {
       "Listen target for restarted daemon (host:port, port, or unix socket)",
     )
     .option("--port <port>", "Port for restarted daemon listen target")
-    .option("--no-relay", "Disable relay on restarted daemon")
     .option("--no-mcp", "Disable Agent MCP on restarted daemon")
     .option("--no-inject-mcp", "Disable auto-injecting the Paseo MCP into created agents")
     .option(

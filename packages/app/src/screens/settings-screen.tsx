@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { MutableRefObject, ComponentType } from "react";
 import { View, Text, ScrollView, Alert, Pressable } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -11,7 +11,6 @@ import {
   Moon,
   Monitor,
   ChevronDown,
-  Globe,
   Settings,
   RotateCw,
   Trash2,
@@ -41,7 +40,6 @@ import {
 } from "@/runtime/host-runtime";
 import { AddHostMethodModal } from "@/components/add-host-method-modal";
 import { AddHostModal } from "@/components/add-host-modal";
-import { PairLinkModal } from "@/components/pair-link-modal";
 import { AddSshHostModal } from "@/components/add-ssh-host-modal";
 import { KeyboardShortcutsSection } from "@/screens/settings/keyboard-shortcuts-section";
 import { Button } from "@/components/ui/button";
@@ -136,9 +134,6 @@ const delay = (ms: number) =>
   });
 
 function formatHostConnectionLabel(connection: HostConnection): string {
-  if (connection.type === "relay") {
-    return `Relay (${connection.relayEndpoint})`;
-  }
   if (connection.type === "directSocket") {
     return `Local (${connection.path})`;
   }
@@ -155,12 +150,6 @@ function formatActiveConnectionBadge(input: {
   const { activeConnection, theme } = input;
   if (!activeConnection) {
     return null;
-  }
-  if (activeConnection.type === "relay") {
-    return {
-      icon: <Globe size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />,
-      text: "Relay",
-    };
   }
   if (activeConnection.type === "directSocket") {
     return {
@@ -204,11 +193,9 @@ interface HostsSectionProps {
   setIsAddHostMethodVisible: (visible: boolean) => void;
   isAddHostMethodVisible: boolean;
   isDirectHostVisible: boolean;
-  isPasteLinkVisible: boolean;
   closeAddConnectionFlow: () => void;
   goBackToAddConnectionMethods: () => void;
   setIsDirectHostVisible: (visible: boolean) => void;
-  setIsPasteLinkVisible: (visible: boolean) => void;
   pendingRemoveHost: HostProfile | null;
   setPendingRemoveHost: (host: HostProfile | null) => void;
   isRemovingHost: boolean;
@@ -276,18 +263,6 @@ function HostsSection(props: HostsSectionProps) {
           props.setIsAddHostMethodVisible(false);
           props.setIsDirectHostVisible(true);
         }}
-        onPasteLink={() => {
-          props.setIsAddHostMethodVisible(false);
-          props.setIsPasteLinkVisible(true);
-        }}
-        onScanQr={() => {
-          const sourceServerId = props.routeServerId || undefined;
-          props.closeAddConnectionFlow();
-          router.push({
-            pathname: "/pair-scan",
-            params: { source: "settings", sourceServerId },
-          });
-        }}
         onSshHost={() => {
           props.setIsAddHostMethodVisible(false);
           props.setIsSshHostVisible(true);
@@ -297,12 +272,6 @@ function HostsSection(props: HostsSectionProps) {
 
       <AddHostModal
         visible={props.isDirectHostVisible}
-        onClose={props.closeAddConnectionFlow}
-        onCancel={props.goBackToAddConnectionMethods}
-      />
-
-      <PairLinkModal
-        visible={props.isPasteLinkVisible}
         onClose={props.closeAddConnectionFlow}
         onCancel={props.goBackToAddConnectionMethods}
       />
@@ -964,7 +933,6 @@ export default function SettingsScreen() {
   };
   const [isAddHostMethodVisible, setIsAddHostMethodVisible] = useState(false);
   const [isDirectHostVisible, setIsDirectHostVisible] = useState(false);
-  const [isPasteLinkVisible, setIsPasteLinkVisible] = useState(false);
   const [isSshHostVisible, setIsSshHostVisible] = useState(false);
   const [pendingRemoveHost, setPendingRemoveHost] = useState<HostProfile | null>(null);
   const [isRemovingHost, setIsRemovingHost] = useState(false);
@@ -1026,13 +994,11 @@ export default function SettingsScreen() {
   const closeAddConnectionFlow = useCallback(() => {
     setIsAddHostMethodVisible(false);
     setIsDirectHostVisible(false);
-    setIsPasteLinkVisible(false);
     setIsSshHostVisible(false);
   }, []);
 
   const goBackToAddConnectionMethods = useCallback(() => {
     setIsDirectHostVisible(false);
-    setIsPasteLinkVisible(false);
     setIsSshHostVisible(false);
     setIsAddHostMethodVisible(true);
   }, []);
@@ -1139,11 +1105,9 @@ export default function SettingsScreen() {
     setIsAddHostMethodVisible,
     isAddHostMethodVisible,
     isDirectHostVisible,
-    isPasteLinkVisible,
     closeAddConnectionFlow,
     goBackToAddConnectionMethods,
     setIsDirectHostVisible,
-    setIsPasteLinkVisible,
     pendingRemoveHost,
     setPendingRemoveHost,
     isRemovingHost,

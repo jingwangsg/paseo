@@ -20,7 +20,6 @@ export function startCommand(): Command {
     .option("--port <port>", "Port to listen on (default: 6767)")
     .option("--home <path>", "Paseo home directory (default: ~/.paseo)")
     .option("--foreground", "Run in foreground (don't daemonize)")
-    .option("--no-relay", "Disable relay connection")
     .option("--no-mcp", "Disable the Agent MCP HTTP endpoint")
     .option("--no-inject-mcp", "Disable auto-injecting the Paseo MCP into created agents")
     .option(

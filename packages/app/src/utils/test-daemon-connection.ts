@@ -3,7 +3,7 @@ import type { DaemonClientConfig } from "@server/client/daemon-client";
 import type { HostConnection } from "@/types/host-connection";
 import { getOrCreateClientId } from "./client-id";
 import { resolveAppVersion } from "./app-version";
-import { buildDaemonWebSocketUrl, buildRelayWebSocketUrl } from "./daemon-endpoints";
+import { buildDaemonWebSocketUrl } from "./daemon-endpoints";
 import {
   buildLocalDaemonTransportUrl,
   createDesktopLocalDaemonTransportFactory,
@@ -81,18 +81,7 @@ export async function buildClientConfig(
     };
   }
 
-  if (!serverId) {
-    throw new Error("serverId is required to probe a relay connection");
-  }
-
-  return {
-    ...base,
-    url: buildRelayWebSocketUrl({
-      endpoint: connection.relayEndpoint,
-      serverId,
-    }),
-    e2ee: { enabled: true, daemonPublicKeyB64: connection.daemonPublicKeyB64 },
-  };
+  throw new Error(`Unsupported connection type: ${(connection as any).type}`);
 }
 
 export function connectAndProbe(
@@ -155,7 +144,7 @@ interface ProbeOptions {
 
 function resolveTimeout(connection: HostConnection, options?: ProbeOptions): number {
   if (options?.timeoutMs) return options.timeoutMs;
-  return connection.type === "relay" ? 10_000 : 6_000;
+  return 6_000;
 }
 
 export async function connectToDaemon(

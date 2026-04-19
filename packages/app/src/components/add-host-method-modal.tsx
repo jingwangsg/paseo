@@ -1,9 +1,8 @@
 import { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { QrCode, Link2, ClipboardPaste, Terminal } from "lucide-react-native";
+import { Link2, Terminal } from "lucide-react-native";
 import { AdaptiveModalSheet } from "./adaptive-modal-sheet";
-import { isNative } from "@/constants/platform";
 
 const styles = StyleSheet.create((theme) => ({
   option: {
@@ -35,8 +34,6 @@ export interface AddHostMethodModalProps {
   visible: boolean;
   onClose: () => void;
   onDirectConnection: () => void;
-  onScanQr: () => void;
-  onPasteLink: () => void;
   onSshHost?: () => void;
   isDesktopApp?: boolean;
 }
@@ -45,8 +42,6 @@ export function AddHostMethodModal({
   visible,
   onClose,
   onDirectConnection,
-  onScanQr,
-  onPasteLink,
   onSshHost,
   isDesktopApp,
 }: AddHostMethodModalProps) {
@@ -55,14 +50,6 @@ export function AddHostMethodModal({
   const handleDirect = useCallback(() => {
     onDirectConnection();
   }, [onDirectConnection]);
-
-  const handleScan = useCallback(() => {
-    onScanQr();
-  }, [onScanQr]);
-
-  const handlePaste = useCallback(() => {
-    onPasteLink();
-  }, [onPasteLink]);
 
   const handleSsh = useCallback(() => {
     onSshHost?.();
@@ -84,28 +71,6 @@ export function AddHostMethodModal({
         <View style={styles.optionBody}>
           <Text style={styles.optionText}>Direct connection</Text>
           <Text style={styles.optionSubtext}>Local network or VPN.</Text>
-        </View>
-      </Pressable>
-
-      {isNative ? (
-        <Pressable style={styles.option} onPress={handleScan} accessibilityLabel="Scan QR code">
-          <QrCode size={18} color={theme.colors.foreground} />
-          <View style={styles.optionBody}>
-            <Text style={styles.optionText}>Scan QR code</Text>
-            <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
-          </View>
-        </Pressable>
-      ) : null}
-
-      <Pressable
-        style={styles.option}
-        onPress={handlePaste}
-        accessibilityLabel="Paste pairing link"
-      >
-        <ClipboardPaste size={18} color={theme.colors.foreground} />
-        <View style={styles.optionBody}>
-          <Text style={styles.optionText}>Paste pairing link</Text>
-          <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
         </View>
       </Pressable>
 

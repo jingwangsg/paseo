@@ -14,28 +14,9 @@ import { resolveSpeechConfig } from "./speech/speech-config-resolver.js";
 import { mergeHostnames, parseHostnamesEnv, type HostnamesConfig } from "./hostnames.js";
 
 const DEFAULT_PORT = 6767;
-const DEFAULT_RELAY_ENDPOINT = "relay.paseo.sh:443";
-const DEFAULT_APP_BASE_URL = "https://app.paseo.sh";
-
-function parseBooleanEnv(value: string | undefined): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-
-  return undefined;
-}
 
 export type CliConfigOverrides = Partial<{
   listen: string;
-  relayEnabled: boolean;
   mcpEnabled: boolean;
   mcpInjectIntoAgents: boolean;
   hostnames: HostnamesConfig;
@@ -139,20 +120,6 @@ export function loadConfig(
   const mcpInjectIntoAgents =
     options?.cli?.mcpInjectIntoAgents ?? persisted.daemon?.mcp?.injectIntoAgents ?? false;
 
-  const relayEnabled =
-    options?.cli?.relayEnabled ??
-    parseBooleanEnv(env.PASEO_RELAY_ENABLED) ??
-    persisted.daemon?.relay?.enabled ??
-    true;
-
-  const relayEndpoint =
-    env.PASEO_RELAY_ENDPOINT ?? persisted.daemon?.relay?.endpoint ?? DEFAULT_RELAY_ENDPOINT;
-
-  const relayPublicEndpoint =
-    env.PASEO_RELAY_PUBLIC_ENDPOINT ?? persisted.daemon?.relay?.publicEndpoint ?? relayEndpoint;
-
-  const appBaseUrl = env.PASEO_APP_BASE_URL ?? persisted.app?.baseUrl ?? DEFAULT_APP_BASE_URL;
-
   const { openai, speech } = resolveSpeechConfig({
     paseoHome,
     env,
@@ -184,10 +151,6 @@ export function loadConfig(
     agentStoragePath: path.join(paseoHome, "agents"),
     staticDir: "public",
     agentClients: {},
-    relayEnabled,
-    relayEndpoint,
-    relayPublicEndpoint,
-    appBaseUrl,
     openai,
     speech,
     voiceLlmProvider,

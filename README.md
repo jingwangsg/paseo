@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
-</p>
-
 <h1 align="center">Paseo</h1>
 
 <p align="center">
@@ -120,8 +116,6 @@ Quick monorepo package map:
 - `packages/app`: Expo client (iOS, Android, web)
 - `packages/cli`: `paseo` CLI for daemon and agent workflows
 - `packages/desktop`: Electron desktop app
-- `packages/relay`: Relay package for remote connectivity
-- `packages/website`: Marketing site and documentation (`paseo.sh`)
 
 Common commands:
 
@@ -133,7 +127,6 @@ npm run dev
 npm run dev:server
 npm run dev:app
 npm run dev:desktop
-npm run dev:website
 
 # build the daemon
 npm run build:daemon

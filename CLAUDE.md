@@ -11,9 +11,7 @@ This is an npm workspace monorepo:
 - `packages/server` — Daemon: agent lifecycle, WebSocket API, MCP server
 - `packages/app` — Mobile + web client (Expo)
 - `packages/cli` — Docker-style CLI (`paseo run/ls/logs/wait`)
-- `packages/relay` — E2E encrypted relay for remote access
 - `packages/desktop` — Electron desktop wrapper
-- `packages/website` — Marketing site (paseo.sh)
 
 ## Documentation
 
@@ -27,7 +25,7 @@ This is an npm workspace monorepo:
 | [docs/CUSTOM-PROVIDERS.md](docs/CUSTOM-PROVIDERS.md) | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries |
 | [docs/ANDROID.md](docs/ANDROID.md) | App variants, local/cloud builds, EAS workflows |
 | [docs/DESIGN.md](docs/DESIGN.md) | How to design features before implementation |
-| [SECURITY.md](SECURITY.md) | Relay threat model, E2E encryption, DNS rebinding, agent auth |
+| [SECURITY.md](SECURITY.md) | DNS rebinding, agent auth |
 
 ## Quick start
 
