@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { QrCode, Link2, ClipboardPaste } from "lucide-react-native";
+import { QrCode, Link2, ClipboardPaste, Terminal } from "lucide-react-native";
 import { AdaptiveModalSheet } from "./adaptive-modal-sheet";
 import { isNative } from "@/constants/platform";
 
@@ -37,6 +37,8 @@ export interface AddHostMethodModalProps {
   onDirectConnection: () => void;
   onScanQr: () => void;
   onPasteLink: () => void;
+  onSshHost?: () => void;
+  isDesktopApp?: boolean;
 }
 
 export function AddHostMethodModal({
@@ -45,6 +47,8 @@ export function AddHostMethodModal({
   onDirectConnection,
   onScanQr,
   onPasteLink,
+  onSshHost,
+  isDesktopApp,
 }: AddHostMethodModalProps) {
   const { theme } = useUnistyles();
 
@@ -59,6 +63,10 @@ export function AddHostMethodModal({
   const handlePaste = useCallback(() => {
     onPasteLink();
   }, [onPasteLink]);
+
+  const handleSsh = useCallback(() => {
+    onSshHost?.();
+  }, [onSshHost]);
 
   return (
     <AdaptiveModalSheet
@@ -100,6 +108,16 @@ export function AddHostMethodModal({
           <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
         </View>
       </Pressable>
+
+      {isDesktopApp && onSshHost ? (
+        <Pressable style={styles.option} onPress={handleSsh} accessibilityLabel="SSH host">
+          <Terminal size={18} color={theme.colors.foreground} />
+          <View style={styles.optionBody}>
+            <Text style={styles.optionText}>SSH host</Text>
+            <Text style={styles.optionSubtext}>Connect via SSH tunnel.</Text>
+          </View>
+        </Pressable>
+      ) : null}
     </AdaptiveModalSheet>
   );
 }
