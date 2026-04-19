@@ -1789,11 +1789,11 @@ export class Session {
             break;
 
           case "subscribe_terminals_request":
-            this.handleSubscribeTerminalsRequest(msg);
+            await this.handleSubscribeTerminalsRequest(msg);
             break;
 
           case "unsubscribe_terminals_request":
-            this.handleUnsubscribeTerminalsRequest(msg);
+            await this.handleUnsubscribeTerminalsRequest(msg);
             break;
 
           case "list_terminals_request":
@@ -3961,27 +3961,12 @@ export class Session {
   ): Promise<void> {
     const { cwd, requestId } = msg;
 
-    // SSH-namespaced paths refer to remote hosts — skip local git inspection.
-    if (isSshNamespacedId(cwd)) {
-      this.emit({
-        type: "checkout_status_response",
-        payload: {
-          cwd,
-          isGit: false,
-          repoRoot: null,
-          currentBranch: null,
-          isDirty: null,
-          baseRef: null,
-          aheadBehind: null,
-          aheadOfOrigin: null,
-          behindOfOrigin: null,
-          hasRemote: false,
-          remoteUrl: null,
-          isPaseoOwnedWorktree: false,
-          error: null,
-          requestId,
-        },
-      });
+    const hostAlias = extractHostAliasFromAgentId(cwd);
+    if (hostAlias && isSshNamespacedId(cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
       return;
     }
 
@@ -4081,6 +4066,15 @@ export class Session {
   private async handleValidateBranchRequest(
     msg: Extract<SessionInboundMessage, { type: "validate_branch_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, branchName, requestId } = msg;
 
     try {
@@ -4157,6 +4151,15 @@ export class Session {
   private async handleBranchSuggestionsRequest(
     msg: Extract<SessionInboundMessage, { type: "branch_suggestions_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, query, limit, requestId } = msg;
 
     try {
@@ -4256,6 +4259,15 @@ export class Session {
   private async handleSubscribeCheckoutDiffRequest(
     msg: SubscribeCheckoutDiffRequest,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const cwd = expandTilde(msg.cwd);
     this.checkoutDiffSubscriptions.get(msg.subscriptionId)?.();
     this.checkoutDiffSubscriptions.delete(msg.subscriptionId);
@@ -4291,6 +4303,15 @@ export class Session {
   private async handleCheckoutSwitchBranchRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_switch_branch_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, branch, requestId } = msg;
 
     try {
@@ -4334,6 +4355,15 @@ export class Session {
   private async handleStashSaveRequest(
     msg: Extract<SessionInboundMessage, { type: "stash_save_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
     try {
       const branchLabel = msg.branch?.trim() ?? "";
@@ -4357,6 +4387,15 @@ export class Session {
   private async handleStashPopRequest(
     msg: Extract<SessionInboundMessage, { type: "stash_pop_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, stashIndex, requestId } = msg;
     try {
       await execCommand("git", ["stash", "pop", `stash@{${stashIndex}}`], { cwd });
@@ -4376,6 +4415,15 @@ export class Session {
   private async handleStashListRequest(
     msg: Extract<SessionInboundMessage, { type: "stash_list_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
     const paseoOnly = msg.paseoOnly !== false;
     try {
@@ -4424,6 +4472,15 @@ export class Session {
   private async handleCheckoutCommitRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_commit_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4466,6 +4523,15 @@ export class Session {
   private async handleCheckoutMergeRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_merge_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4540,6 +4606,15 @@ export class Session {
   private async handleCheckoutMergeFromBaseRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_merge_from_base_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4584,6 +4659,15 @@ export class Session {
   private async handleCheckoutPullRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_pull_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4615,6 +4699,15 @@ export class Session {
   private async handleCheckoutPushRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_push_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4644,6 +4737,15 @@ export class Session {
   private async handleCheckoutPrCreateRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_pr_create_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4689,6 +4791,15 @@ export class Session {
   private async handleCheckoutPrStatusRequest(
     msg: Extract<SessionInboundMessage, { type: "checkout_pr_status_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     const { cwd, requestId } = msg;
 
     try {
@@ -4725,6 +4836,15 @@ export class Session {
   private async handlePaseoWorktreeListRequest(
     msg: Extract<SessionInboundMessage, { type: "paseo_worktree_list_request" }>,
   ): Promise<void> {
+    const hostAlias = typeof msg.cwd === "string" ? extractHostAliasFromAgentId(msg.cwd) : null;
+    if (hostAlias && typeof msg.cwd === "string" && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     return handleWorktreeListRequest(
       {
         emit: (message) => this.emit(message),
@@ -4737,6 +4857,16 @@ export class Session {
   private async handlePaseoWorktreeArchiveRequest(
     msg: Extract<SessionInboundMessage, { type: "paseo_worktree_archive_request" }>,
   ): Promise<void> {
+    const hostAlias =
+      typeof msg.worktreePath === "string" ? extractHostAliasFromAgentId(msg.worktreePath) : null;
+    if (hostAlias && typeof msg.worktreePath === "string" && isSshNamespacedId(msg.worktreePath)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["worktreePath"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     return handleWorktreeArchiveRequest(
       {
         paseoHome: this.paseoHome,
@@ -4774,6 +4904,15 @@ export class Session {
           requestId,
         },
       });
+      return;
+    }
+
+    const hostAlias = extractHostAliasFromAgentId(cwd);
+    if (hostAlias && isSshNamespacedId(cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, request, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(request);
+      }
       return;
     }
 
@@ -4841,6 +4980,15 @@ export class Session {
   private async handleProjectIconRequest(
     request: Extract<SessionInboundMessage, { type: "project_icon_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(request.cwd);
+    if (hostAlias && isSshNamespacedId(request.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, request, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(request);
+      }
+      return;
+    }
+
     const { cwd, requestId } = request;
 
     try {
@@ -6255,6 +6403,15 @@ export class Session {
   private async handleCreatePaseoWorktreeRequest(
     request: Extract<SessionInboundMessage, { type: "create_paseo_worktree_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(request.cwd);
+    if (hostAlias && isSshNamespacedId(request.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, request, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(request);
+      }
+      return;
+    }
+
     return handleCreateWorktreeRequest(
       {
         paseoHome: this.paseoHome,
@@ -6292,6 +6449,17 @@ export class Session {
   private async handleArchiveWorkspaceRequest(
     request: Extract<SessionInboundMessage, { type: "archive_workspace_request" }>,
   ): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(request.workspaceId);
+    if (hostAlias && isSshNamespacedId(request.workspaceId)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, request, [
+        "workspaceId",
+      ]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(request);
+      }
+      return;
+    }
+
     try {
       const existing = await this.workspaceRegistry.get(request.workspaceId);
       if (!existing) {
@@ -7376,8 +7544,8 @@ export class Session {
     hostAlias: string,
     msg: Extract<SessionInboundMessage, { type: "create_agent_request" }>,
   ): Promise<void> {
-    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
-    if (!tunnelPort) {
+    const proxy = await this.ensureRemoteProxy(hostAlias);
+    if (!proxy) {
       this.emit({
         type: "status",
         payload: {
@@ -7390,20 +7558,6 @@ export class Session {
     }
 
     try {
-      let proxy = this.remoteAgentProxies.get(hostAlias);
-      if (!proxy?.alive) {
-        proxy = await createRemoteAgentProxy({
-          hostAlias,
-          tunnelPort,
-          daemonVersion: this.daemonVersion ?? "0.0.0",
-          logger: this.sessionLogger,
-          onSessionMessage: (remoteMsg) => {
-            this.handleRemoteAgentResponse(hostAlias, remoteMsg);
-          },
-        });
-        this.remoteAgentProxies.set(hostAlias, proxy);
-      }
-
       // Forward without host field.  Strip the SSH namespace from the cwd
       // so the remote daemon receives a plain local path it can resolve.
       const { host, ...remoteMsg } = msg;
@@ -7428,8 +7582,8 @@ export class Session {
     hostAlias: string,
     msg: CreateTerminalRequest,
   ): Promise<void> {
-    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
-    if (!tunnelPort) {
+    const proxy = await this.ensureRemoteProxy(hostAlias);
+    if (!proxy) {
       this.emit({
         type: "create_terminal_response",
         payload: {
@@ -7442,20 +7596,6 @@ export class Session {
     }
 
     try {
-      let proxy = this.remoteAgentProxies.get(hostAlias);
-      if (!proxy?.alive) {
-        proxy = await createRemoteAgentProxy({
-          hostAlias,
-          tunnelPort,
-          daemonVersion: this.daemonVersion ?? "0.0.0",
-          logger: this.sessionLogger,
-          onSessionMessage: (remoteMsg) => {
-            this.handleRemoteAgentResponse(hostAlias, remoteMsg);
-          },
-        });
-        this.remoteAgentProxies.set(hostAlias, proxy);
-      }
-
       // Forward without host field.  Strip SSH namespace from cwd
       // so the remote daemon receives a plain local path.
       const { host, ...remoteMsg } = msg;
@@ -7473,6 +7613,349 @@ export class Session {
           requestId: msg.requestId,
         },
       });
+    }
+  }
+
+  private async ensureRemoteProxy(hostAlias: string): Promise<RemoteAgentProxy | null> {
+    const existing = this.remoteAgentProxies.get(hostAlias);
+    if (existing?.alive) {
+      return existing;
+    }
+
+    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
+    if (!tunnelPort) {
+      this.sessionLogger.warn({ hostAlias }, "Remote proxy not available");
+      return null;
+    }
+
+    try {
+      const proxy = await createRemoteAgentProxy({
+        hostAlias,
+        tunnelPort,
+        daemonVersion: this.daemonVersion ?? "0.0.0",
+        logger: this.sessionLogger,
+        onSessionMessage: (remoteMsg) => {
+          this.handleRemoteAgentResponse(hostAlias, remoteMsg);
+        },
+      });
+      this.remoteAgentProxies.set(hostAlias, proxy);
+      return proxy;
+    } catch (err) {
+      this.sessionLogger.warn({ err, hostAlias }, "Failed to establish remote proxy");
+      return null;
+    }
+  }
+
+  private async forwardRemoteWorkspaceMessage(
+    hostAlias: string,
+    msg: Record<string, unknown>,
+    fieldsToStrip: Array<"cwd" | "workspaceId" | "worktreePath">,
+  ): Promise<boolean> {
+    const proxy = await this.ensureRemoteProxy(hostAlias);
+    if (!proxy?.alive) {
+      this.sessionLogger.warn({ hostAlias, msgType: msg.type }, "Remote proxy not available");
+      return false;
+    }
+
+    const remoteMsg = { ...msg };
+    for (const field of fieldsToStrip) {
+      if (typeof remoteMsg[field] === "string" && isSshNamespacedId(remoteMsg[field])) {
+        remoteMsg[field] = stripSshNamespace(remoteMsg[field]);
+      }
+    }
+
+    proxy.sendSessionMessage(remoteMsg);
+    return true;
+  }
+
+  private emitRemoteWorkspaceUnavailableResponse(
+    msg:
+      | SubscribeCheckoutDiffRequest
+      | ListTerminalsRequest
+      | FileExplorerRequest
+      | Extract<SessionInboundMessage, { type: "checkout_status_request" }>
+      | Extract<SessionInboundMessage, { type: "create_paseo_worktree_request" }>
+      | Extract<SessionInboundMessage, { type: "archive_workspace_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_commit_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_merge_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_merge_from_base_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_pull_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_push_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_pr_create_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_pr_status_request" }>
+      | Extract<SessionInboundMessage, { type: "checkout_switch_branch_request" }>
+      | Extract<SessionInboundMessage, { type: "stash_save_request" }>
+      | Extract<SessionInboundMessage, { type: "stash_pop_request" }>
+      | Extract<SessionInboundMessage, { type: "stash_list_request" }>
+      | Extract<SessionInboundMessage, { type: "validate_branch_request" }>
+      | Extract<SessionInboundMessage, { type: "branch_suggestions_request" }>
+      | Extract<SessionInboundMessage, { type: "paseo_worktree_list_request" }>
+      | Extract<SessionInboundMessage, { type: "paseo_worktree_archive_request" }>
+      | Extract<SessionInboundMessage, { type: "project_icon_request" }>,
+  ): void {
+    const checkoutError = {
+      code: "UNKNOWN" as const,
+      message: "Remote host is not connected",
+    };
+
+    switch (msg.type) {
+      case "list_terminals_request":
+        this.emit({
+          type: "list_terminals_response",
+          payload: {
+            ...(msg.cwd ? { cwd: msg.cwd } : {}),
+            terminals: [],
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "file_explorer_request":
+        this.emit({
+          type: "file_explorer_response",
+          payload: {
+            cwd: msg.cwd,
+            path: msg.path ?? ".",
+            mode: msg.mode,
+            directory: null,
+            file: null,
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "create_paseo_worktree_request":
+        this.emit({
+          type: "create_paseo_worktree_response",
+          payload: {
+            workspace: null,
+            error: "Remote host is not connected",
+            setupTerminalId: null,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "archive_workspace_request":
+        this.emit({
+          type: "archive_workspace_response",
+          payload: {
+            requestId: msg.requestId,
+            workspaceId: msg.workspaceId,
+            archivedAt: null,
+            error: "Remote host is not connected",
+          },
+        });
+        return;
+      case "checkout_status_request":
+        this.emit({
+          type: "checkout_status_response",
+          payload: {
+            cwd: msg.cwd,
+            isGit: false,
+            repoRoot: null,
+            currentBranch: null,
+            isDirty: null,
+            baseRef: null,
+            aheadBehind: null,
+            aheadOfOrigin: null,
+            behindOfOrigin: null,
+            hasRemote: false,
+            remoteUrl: null,
+            isPaseoOwnedWorktree: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "subscribe_checkout_diff_request":
+        this.emit({
+          type: "subscribe_checkout_diff_response",
+          payload: {
+            subscriptionId: msg.subscriptionId,
+            cwd: msg.cwd,
+            files: [],
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_commit_request":
+        this.emit({
+          type: "checkout_commit_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_merge_request":
+        this.emit({
+          type: "checkout_merge_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_merge_from_base_request":
+        this.emit({
+          type: "checkout_merge_from_base_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_pull_request":
+        this.emit({
+          type: "checkout_pull_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_push_request":
+        this.emit({
+          type: "checkout_push_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_pr_create_request":
+        this.emit({
+          type: "checkout_pr_create_response",
+          payload: {
+            cwd: msg.cwd,
+            url: null,
+            number: null,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_pr_status_request":
+        this.emit({
+          type: "checkout_pr_status_response",
+          payload: {
+            cwd: msg.cwd,
+            status: null,
+            githubFeaturesEnabled: true,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "checkout_switch_branch_request":
+        this.emit({
+          type: "checkout_switch_branch_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            branch: msg.branch,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "stash_save_request":
+        this.emit({
+          type: "stash_save_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "stash_pop_request":
+        this.emit({
+          type: "stash_pop_response",
+          payload: {
+            cwd: msg.cwd,
+            success: false,
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "stash_list_request":
+        this.emit({
+          type: "stash_list_response",
+          payload: {
+            cwd: msg.cwd,
+            entries: [],
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "validate_branch_request":
+        this.emit({
+          type: "validate_branch_response",
+          payload: {
+            exists: false,
+            resolvedRef: null,
+            isRemote: false,
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "branch_suggestions_request":
+        this.emit({
+          type: "branch_suggestions_response",
+          payload: {
+            branches: [],
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "paseo_worktree_list_request":
+        this.emit({
+          type: "paseo_worktree_list_response",
+          payload: {
+            worktrees: [],
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "paseo_worktree_archive_request":
+        this.emit({
+          type: "paseo_worktree_archive_response",
+          payload: {
+            success: false,
+            removedAgents: [],
+            error: checkoutError,
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      case "project_icon_request":
+        this.emit({
+          type: "project_icon_response",
+          payload: {
+            cwd: msg.cwd,
+            icon: null,
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+        return;
     }
   }
 
@@ -8429,12 +8912,24 @@ export class Session {
     });
   }
 
-  private handleSubscribeTerminalsRequest(msg: SubscribeTerminalsRequest): void {
+  private async handleSubscribeTerminalsRequest(msg: SubscribeTerminalsRequest): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      return;
+    }
+
     this.subscribedTerminalDirectories.add(msg.cwd);
     void this.emitInitialTerminalsChangedSnapshot(msg.cwd);
   }
 
-  private handleUnsubscribeTerminalsRequest(msg: UnsubscribeTerminalsRequest): void {
+  private async handleUnsubscribeTerminalsRequest(msg: UnsubscribeTerminalsRequest): Promise<void> {
+    const hostAlias = extractHostAliasFromAgentId(msg.cwd);
+    if (hostAlias && isSshNamespacedId(msg.cwd)) {
+      await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      return;
+    }
+
     this.subscribedTerminalDirectories.delete(msg.cwd);
   }
 
@@ -8466,6 +8961,15 @@ export class Session {
   }
 
   private async handleListTerminalsRequest(msg: ListTerminalsRequest): Promise<void> {
+    const hostAlias = typeof msg.cwd === "string" ? extractHostAliasFromAgentId(msg.cwd) : null;
+    if (hostAlias && typeof msg.cwd === "string" && isSshNamespacedId(msg.cwd)) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+      if (!forwarded) {
+        this.emitRemoteWorkspaceUnavailableResponse(msg);
+      }
+      return;
+    }
+
     if (!this.terminalManager) {
       this.emit({
         type: "list_terminals_response",
