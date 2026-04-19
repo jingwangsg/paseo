@@ -71,11 +71,7 @@ export function PairDeviceSection() {
           </View>
         ) : !pairingQuery.data?.url ? (
           <View style={styles.centered}>
-            <Text style={styles.hint}>
-              {pairingQuery.data?.relayEnabled === false
-                ? "Relay is not enabled. Enable relay to pair a device."
-                : "Pairing offer unavailable."}
-            </Text>
+            <Text style={styles.hint}>Pairing offer unavailable.</Text>
             <Button
               variant="outline"
               size="sm"

@@ -8,8 +8,7 @@ declare global {
 }
 
 export function polyfillCrypto(): void {
-  // Ensure TextEncoder/TextDecoder exist for shared E2EE code (tweetnacl + relay transport).
-  // Hermes may not provide them in all configurations.
+  // Ensure TextEncoder/TextDecoder exist — Hermes may not provide them in all configurations.
   if (typeof (globalThis as any).TextEncoder !== "function") {
     class BufferTextEncoder {
       encode(input = ""): Uint8Array {

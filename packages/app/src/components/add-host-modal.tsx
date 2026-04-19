@@ -119,7 +119,7 @@ function buildConnectionFailureCopy(
     rawLower.includes("ssl")
   ) {
     detail =
-      "TLS error. Direct connections use an unencrypted local connection. Use relay for remote access.";
+      "TLS error. Direct connections use an unencrypted local connection. Use SSH for remote access.";
   } else if (raw) {
     detail = "Unable to connect. Check the host/port and that the daemon is reachable.";
   } else {

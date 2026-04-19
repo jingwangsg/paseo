@@ -13,12 +13,11 @@ import {
   type HostConnection,
   type HostProfile,
 } from "@/types/host-connection";
-import { decodeOfferFragmentPayload, normalizeHostPort } from "@/utils/daemon-endpoints";
+import { normalizeHostPort } from "@/utils/daemon-endpoints";
 import { resolveAppVersion } from "@/utils/app-version";
-import { ConnectionOfferSchema, type ConnectionOffer } from "@server/shared/connection-offer";
 import { shouldUseDesktopDaemon, startDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { connectToDaemon } from "@/utils/test-daemon-connection";
-import { buildDaemonWebSocketUrl, buildRelayWebSocketUrl } from "@/utils/daemon-endpoints";
+import { buildDaemonWebSocketUrl } from "@/utils/daemon-endpoints";
 import { getOrCreateClientId } from "@/utils/client-id";
 import {
   selectBestConnection,
@@ -41,8 +40,7 @@ export type HostRuntimeBootstrapResult =
 export type ActiveConnection =
   | { type: "directTcp"; endpoint: string; display: string }
   | { type: "directSocket"; endpoint: string; display: "socket" }
-  | { type: "directPipe"; endpoint: string; display: "pipe" }
-  | { type: "relay"; endpoint: string; display: "relay" };
+  | { type: "directPipe"; endpoint: string; display: "pipe" };
 
 export type HostRuntimeAgentDirectoryStatus =
   | "idle"
@@ -180,17 +178,10 @@ function toActiveConnection(connection: HostConnection): ActiveConnection {
       display: "pipe",
     };
   }
-  if (connection.type === "directTcp") {
-    return {
-      type: "directTcp",
-      endpoint: connection.endpoint,
-      display: connection.endpoint,
-    };
-  }
   return {
-    type: "relay",
-    endpoint: connection.relayEndpoint,
-    display: "relay",
+    type: "directTcp",
+    endpoint: connection.endpoint,
+    display: connection.endpoint,
   };
 }
 
@@ -433,22 +424,9 @@ function createDefaultDeps(): HostRuntimeControllerDeps {
           }),
         });
       }
-      if (connection.type === "directTcp") {
-        return new DaemonClient({
-          ...base,
-          url: buildDaemonWebSocketUrl(connection.endpoint),
-        });
-      }
       return new DaemonClient({
         ...base,
-        url: buildRelayWebSocketUrl({
-          endpoint: connection.relayEndpoint,
-          serverId: host.serverId,
-        }),
-        e2ee: {
-          enabled: true,
-          daemonPublicKeyB64: connection.daemonPublicKeyB64,
-        },
+        url: buildDaemonWebSocketUrl(connection.endpoint),
       });
     },
     connectToDaemon: ({ host, connection }) =>
@@ -1260,56 +1238,6 @@ export class HostRuntimeStore {
     });
   }
 
-  async upsertRelayConnection(input: {
-    serverId: string;
-    relayEndpoint: string;
-    daemonPublicKeyB64: string;
-    label?: string;
-  }): Promise<HostProfile> {
-    const relayEndpoint = normalizeHostPort(input.relayEndpoint);
-    const daemonPublicKeyB64 = input.daemonPublicKeyB64.trim();
-    if (!daemonPublicKeyB64) {
-      throw new Error("daemonPublicKeyB64 is required");
-    }
-    return this.upsertHostConnection({
-      serverId: input.serverId,
-      label: input.label,
-      connection: {
-        id: `relay:${relayEndpoint}`,
-        type: "relay",
-        relayEndpoint,
-        daemonPublicKeyB64,
-      },
-    });
-  }
-
-  async upsertConnectionFromOffer(offer: ConnectionOffer, label?: string): Promise<HostProfile> {
-    return this.upsertRelayConnection({
-      serverId: offer.serverId,
-      relayEndpoint: offer.relay.endpoint,
-      daemonPublicKeyB64: offer.daemonPublicKeyB64,
-      label,
-    });
-  }
-
-  async upsertConnectionFromOfferUrl(
-    offerUrlOrFragment: string,
-    label?: string,
-  ): Promise<HostProfile> {
-    const marker = "#offer=";
-    const idx = offerUrlOrFragment.indexOf(marker);
-    if (idx === -1) {
-      throw new Error("Missing #offer= fragment");
-    }
-    const encoded = offerUrlOrFragment.slice(idx + marker.length).trim();
-    if (!encoded) {
-      throw new Error("Offer payload is empty");
-    }
-    const payload = decodeOfferFragmentPayload(encoded);
-    const offer = ConnectionOfferSchema.parse(payload);
-    return this.upsertConnectionFromOffer(offer, label);
-  }
-
   async addConnectionFromListenAndWaitForOnline(input: {
     listenAddress: string;
     serverId: string;
@@ -1947,17 +1875,6 @@ export interface HostMutations {
     endpoint: string;
     label?: string;
   }) => Promise<HostProfile>;
-  upsertRelayConnection: (input: {
-    serverId: string;
-    relayEndpoint: string;
-    daemonPublicKeyB64: string;
-    label?: string;
-  }) => Promise<HostProfile>;
-  upsertConnectionFromOffer: (offer: ConnectionOffer, label?: string) => Promise<HostProfile>;
-  upsertConnectionFromOfferUrl: (
-    offerUrlOrFragment: string,
-    label?: string,
-  ) => Promise<HostProfile>;
   renameHost: (serverId: string, label: string) => Promise<void>;
   removeHost: (serverId: string) => Promise<void>;
   removeConnection: (serverId: string, connectionId: string) => Promise<void>;
@@ -1968,9 +1885,6 @@ export function useHostMutations(): HostMutations {
   return useMemo(
     () => ({
       upsertDirectConnection: (input) => store.upsertDirectConnection(input),
-      upsertRelayConnection: (input) => store.upsertRelayConnection(input),
-      upsertConnectionFromOffer: (offer, label) => store.upsertConnectionFromOffer(offer, label),
-      upsertConnectionFromOfferUrl: (url, label) => store.upsertConnectionFromOfferUrl(url, label),
       renameHost: (serverId, label) => store.renameHost(serverId, label),
       removeHost: (serverId) => store.removeHost(serverId),
       removeConnection: (serverId, connectionId) => store.removeConnection(serverId, connectionId),

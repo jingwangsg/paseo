@@ -5,7 +5,6 @@ import type {
   FetchAgentsEntry,
   FetchAgentsOptions,
 } from "@server/client/daemon-client";
-import type { ConnectionOffer } from "@server/shared/connection-offer";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import {
@@ -173,32 +172,20 @@ function makeHost(input?: Partial<HostProfile>): HostProfile {
     type: "directTcp",
     endpoint: "lan:6767",
   };
-  const relay: HostConnection = {
-    id: "relay:relay.paseo.sh:443",
-    type: "relay",
-    relayEndpoint: "relay.paseo.sh:443",
-    daemonPublicKeyB64: "pk_test",
+  const remote: HostConnection = {
+    id: "direct:remote.paseo.sh:443",
+    type: "directTcp",
+    endpoint: "remote.paseo.sh:443",
   };
 
   return {
     serverId: input?.serverId ?? "srv_test",
     label: input?.label ?? "test host",
     lifecycle: input?.lifecycle ?? {},
-    connections: input?.connections ?? [direct, relay],
+    connections: input?.connections ?? [direct, remote],
     preferredConnectionId: input?.preferredConnectionId ?? direct.id,
     createdAt: input?.createdAt ?? new Date(0).toISOString(),
     updatedAt: input?.updatedAt ?? new Date(0).toISOString(),
-  };
-}
-
-function makeOffer(input?: Partial<ConnectionOffer>): ConnectionOffer {
-  return {
-    v: 2,
-    serverId: input?.serverId ?? "srv_offer",
-    daemonPublicKeyB64: input?.daemonPublicKeyB64 ?? "pk_test_offer",
-    relay: {
-      endpoint: input?.relay?.endpoint ?? "relay.paseo.sh:443",
-    },
   };
 }
 
@@ -346,7 +333,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 82,
-      "relay:relay.paseo.sh:443": 18,
+      "direct:remote.paseo.sh:443": 18,
     };
     const controller = new HostRuntimeController({
       host,
@@ -377,7 +364,7 @@ describe("HostRuntimeController", () => {
         },
         connectToDaemon: async ({ host, connection }) => {
           const client = makeConnectedProbeClient(connection.id === "direct:lan:6767" ? 12 : 30);
-          if (connection.id === "relay:relay.paseo.sh:443") {
+          if (connection.id === "direct:remote.paseo.sh:443") {
             client.ping = async () => ({ rttMs: await slowPing.promise });
           }
           clients.push(client);
@@ -417,7 +404,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 15,
-      "relay:relay.paseo.sh:443": 55,
+      "direct:remote.paseo.sh:443": 55,
     };
     const controller = new HostRuntimeController({
       host,
@@ -430,12 +417,12 @@ describe("HostRuntimeController", () => {
     expect(initialClient).toBeTruthy();
 
     latencies["direct:lan:6767"] = new Error("direct unavailable");
-    latencies["relay:relay.paseo.sh:443"] = 42;
+    latencies["direct:remote.paseo.sh:443"] = 42;
     clearProbeBackoff(controller);
     await controller.runProbeCycleNow();
 
     const snapshot = controller.getSnapshot();
-    expect(snapshot.activeConnectionId).toBe("relay:relay.paseo.sh:443");
+    expect(snapshot.activeConnectionId).toBe("direct:remote.paseo.sh:443");
     expect(snapshot.connectionStatus).toBe("online");
     expect(snapshot.client).not.toBe(initialClient);
     expect((initialClient as unknown as FakeDaemonClient | null)?.closeCalls).toBe(1);
@@ -446,7 +433,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 15,
-      "relay:relay.paseo.sh:443": 60,
+      "direct:remote.paseo.sh:443": 60,
     };
     const controller = new HostRuntimeController({
       host,
@@ -457,7 +444,7 @@ describe("HostRuntimeController", () => {
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
     latencies["direct:lan:6767"] = 95;
-    latencies["relay:relay.paseo.sh:443"] = 30;
+    latencies["direct:remote.paseo.sh:443"] = 30;
     clearProbeBackoff(controller);
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
@@ -466,11 +453,11 @@ describe("HostRuntimeController", () => {
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
-    let switched = controller.getSnapshot().activeConnectionId === "relay:relay.paseo.sh:443";
+    let switched = controller.getSnapshot().activeConnectionId === "direct:remote.paseo.sh:443";
     for (let index = 0; index < 6 && !switched; index += 1) {
       clearProbeBackoff(controller);
       await controller.runProbeCycleNow();
-      switched = controller.getSnapshot().activeConnectionId === "relay:relay.paseo.sh:443";
+      switched = controller.getSnapshot().activeConnectionId === "direct:remote.paseo.sh:443";
     }
     expect(switched).toBe(true);
     expect(controller.getSnapshot().client).not.toBeNull();
@@ -481,7 +468,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 15,
-      "relay:relay.paseo.sh:443": 80,
+      "direct:remote.paseo.sh:443": 80,
     };
     const controller = new HostRuntimeController({
       host,
@@ -492,19 +479,19 @@ describe("HostRuntimeController", () => {
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
     latencies["direct:lan:6767"] = 100;
-    latencies["relay:relay.paseo.sh:443"] = 20;
+    latencies["direct:remote.paseo.sh:443"] = 20;
     clearProbeBackoff(controller);
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
     latencies["direct:lan:6767"] = 20;
-    latencies["relay:relay.paseo.sh:443"] = 90;
+    latencies["direct:remote.paseo.sh:443"] = 90;
     clearProbeBackoff(controller);
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
     latencies["direct:lan:6767"] = 100;
-    latencies["relay:relay.paseo.sh:443"] = 20;
+    latencies["direct:remote.paseo.sh:443"] = 20;
     clearProbeBackoff(controller);
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
@@ -513,11 +500,11 @@ describe("HostRuntimeController", () => {
     await controller.runProbeCycleNow();
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
 
-    let switched = controller.getSnapshot().activeConnectionId === "relay:relay.paseo.sh:443";
+    let switched = controller.getSnapshot().activeConnectionId === "direct:remote.paseo.sh:443";
     for (let index = 0; index < 6 && !switched; index += 1) {
       clearProbeBackoff(controller);
       await controller.runProbeCycleNow();
-      switched = controller.getSnapshot().activeConnectionId === "relay:relay.paseo.sh:443";
+      switched = controller.getSnapshot().activeConnectionId === "direct:remote.paseo.sh:443";
     }
     expect(switched).toBe(true);
   });
@@ -527,7 +514,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 12,
-      "relay:relay.paseo.sh:443": 65,
+      "direct:remote.paseo.sh:443": 65,
     };
     const controller = new HostRuntimeController({
       host,
@@ -598,7 +585,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 12,
-      "relay:relay.paseo.sh:443": 65,
+      "direct:remote.paseo.sh:443": 65,
     };
     const controller = new HostRuntimeController({
       host,
@@ -618,7 +605,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 12,
-      "relay:relay.paseo.sh:443": 65,
+      "direct:remote.paseo.sh:443": 65,
     };
     const controller = new HostRuntimeController({
       host,
@@ -647,7 +634,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 12,
-      "relay:relay.paseo.sh:443": 65,
+      "direct:remote.paseo.sh:443": 65,
     };
     const controller = new HostRuntimeController({
       host,
@@ -669,7 +656,7 @@ describe("HostRuntimeController", () => {
     const clients: FakeDaemonClient[] = [];
     const latencies: Record<string, number | Error> = {
       "direct:lan:6767": 12,
-      "relay:relay.paseo.sh:443": 65,
+      "direct:remote.paseo.sh:443": 65,
     };
     const controller = new HostRuntimeController({
       host,
@@ -702,10 +689,9 @@ describe("HostRuntimeController", () => {
           endpoint: "lan:6767",
         },
         {
-          id: "relay:relay.paseo.sh:443",
-          type: "relay",
-          relayEndpoint: "relay.paseo.sh:443",
-          daemonPublicKeyB64: "pk_test",
+          id: "direct:remote.paseo.sh:443",
+          type: "directTcp",
+          endpoint: "remote.paseo.sh:443",
         },
       ],
     });
@@ -760,24 +746,24 @@ describe("HostRuntimeController", () => {
       );
     });
 
-    const switchRelay = (
+    const switchRemote = (
       controller as unknown as {
         switchToConnection: (input: { connectionId: string }) => Promise<void>;
       }
-    ).switchToConnection({ connectionId: "relay:relay.paseo.sh:443" });
+    ).switchToConnection({ connectionId: "direct:remote.paseo.sh:443" });
     await waitUntil(() => {
       const snapshot = controller.getSnapshot();
       return (
-        snapshot.activeConnectionId === "relay:relay.paseo.sh:443" &&
+        snapshot.activeConnectionId === "direct:remote.paseo.sh:443" &&
         snapshot.connectionStatus === "online"
       );
     });
 
     firstConnectGate.resolve();
-    await Promise.allSettled([switchDirect, switchRelay]);
+    await Promise.allSettled([switchDirect, switchRemote]);
 
     const snapshot = controller.getSnapshot();
-    expect(snapshot.activeConnectionId).toBe("relay:relay.paseo.sh:443");
+    expect(snapshot.activeConnectionId).toBe("direct:remote.paseo.sh:443");
     expect(snapshot.connectionStatus).toBe("online");
     expect(snapshot.lastError).toBeNull();
     expect(createdClients).toHaveLength(2);
@@ -1304,52 +1290,4 @@ describe("HostRuntimeStore", () => {
     store.syncHosts([]);
   });
 
-  it("uses the advertised hostname when adding a relay host from a pairing offer", async () => {
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
-        connectToDaemon: async ({ host }) => ({
-          client: makeConnectedProbeClient(5) as unknown as DaemonClient,
-          serverId: host.serverId,
-          hostname: host.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
-
-    await store.upsertConnectionFromOffer(makeOffer(), "mbp");
-
-    const pairedHost = store.getHosts().find((host) => host.serverId === "srv_offer");
-    expect(pairedHost?.label).toBe("mbp");
-
-    store.syncHosts([]);
-  });
-
-  it("uses the latest advertised hostname when re-pairing an existing relay host", async () => {
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
-        connectToDaemon: async ({ host }) => ({
-          client: makeConnectedProbeClient(5) as unknown as DaemonClient,
-          serverId: host.serverId,
-          hostname: host.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
-
-    await store.upsertRelayConnection({
-      serverId: "srv_offer",
-      relayEndpoint: "relay.paseo.sh:443",
-      daemonPublicKeyB64: "pk_test_offer",
-      label: "Custom name",
-    });
-
-    await store.upsertConnectionFromOffer(makeOffer(), "mbp");
-
-    const pairedHost = store.getHosts().find((host) => host.serverId === "srv_offer");
-    expect(pairedHost?.label).toBe("mbp");
-
-    store.syncHosts([]);
-  });
 });

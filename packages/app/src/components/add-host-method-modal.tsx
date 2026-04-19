@@ -92,7 +92,7 @@ export function AddHostMethodModal({
           <QrCode size={18} color={theme.colors.foreground} />
           <View style={styles.optionBody}>
             <Text style={styles.optionText}>Scan QR code</Text>
-            <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
+            <Text style={styles.optionSubtext}>Scan a pairing code.</Text>
           </View>
         </Pressable>
       ) : null}
@@ -105,7 +105,7 @@ export function AddHostMethodModal({
         <ClipboardPaste size={18} color={theme.colors.foreground} />
         <View style={styles.optionBody}>
           <Text style={styles.optionText}>Paste pairing link</Text>
-          <Text style={styles.optionSubtext}>Encrypted relay connection.</Text>
+          <Text style={styles.optionSubtext}>Paste a pairing link.</Text>
         </View>
       </Pressable>
 

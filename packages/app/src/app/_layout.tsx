@@ -22,7 +22,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import {
   getHostRuntimeStore,
   useHosts,
-  useHostMutations,
   useHostRuntimeClient,
 } from "@/runtime/host-runtime";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
@@ -42,7 +41,6 @@ import {
   useRef,
 } from "react";
 import { Platform } from "react-native";
-import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
 import { LeftSidebar } from "@/components/left-sidebar";
 import { DownloadToast } from "@/components/download-toast";
@@ -74,7 +72,6 @@ import { getDesktopHost } from "@/desktop/host";
 import { updateDesktopWindowControls } from "@/desktop/electron/window";
 import { buildNotificationRoute } from "@/utils/notification-routing";
 import {
-  buildHostRootRoute,
   mapPathnameToServer,
   parseServerIdFromPathname,
   parseHostAgentRouteFromPathname,
@@ -577,7 +574,6 @@ function MobileGestureWrapper({
 
 function ProvidersWrapper({ children }: { children: ReactNode }) {
   const { settings, isLoading: settingsLoading } = useAppSettings();
-  const { upsertConnectionFromOfferUrl } = useHostMutations();
   const systemColorScheme = useColorScheme();
   const { theme } = useUnistyles();
   const resolvedTheme = settings.theme === "auto" ? (systemColorScheme ?? "light") : settings.theme;
@@ -608,54 +604,11 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
 
   return (
     <VoiceProvider>
-      <OfferLinkListener upsertDaemonFromOfferUrl={upsertConnectionFromOfferUrl} />
       <HostSessionManager />
       <FaviconStatusSync />
       {children}
     </VoiceProvider>
   );
-}
-
-function OfferLinkListener({
-  upsertDaemonFromOfferUrl,
-}: {
-  upsertDaemonFromOfferUrl: (offerUrlOrFragment: string) => Promise<unknown>;
-}) {
-  const router = useRouter();
-
-  useEffect(() => {
-    let cancelled = false;
-    const handleUrl = (url: string | null) => {
-      if (!url) return;
-      if (!url.includes("#offer=")) return;
-      void upsertDaemonFromOfferUrl(url)
-        .then((profile) => {
-          if (cancelled) return;
-          const serverId = (profile as any)?.serverId;
-          if (typeof serverId !== "string" || !serverId) return;
-          router.replace(buildHostRootRoute(serverId));
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          console.warn("[Linking] Failed to import pairing offer", error);
-        });
-    };
-
-    void Linking.getInitialURL()
-      .then(handleUrl)
-      .catch(() => undefined);
-
-    const subscription = Linking.addEventListener("url", (event) => {
-      handleUrl(event.url);
-    });
-
-    return () => {
-      cancelled = true;
-      subscription.remove();
-    };
-  }, [router, upsertDaemonFromOfferUrl]);
-
-  return null;
 }
 
 interface OpenProjectEventPayload {

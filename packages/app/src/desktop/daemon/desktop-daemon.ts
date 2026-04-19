@@ -21,7 +21,6 @@ export type DesktopDaemonLogs = {
 };
 
 export type DesktopPairingOffer = {
-  relayEnabled: boolean;
   url: string | null;
   qr: string | null;
 };
@@ -103,7 +102,6 @@ function parseDesktopPairingOffer(raw: unknown): DesktopPairingOffer {
     throw new Error("Unexpected desktop daemon pairing response.");
   }
   return {
-    relayEnabled: raw.relayEnabled === true,
     url: toStringOrNull(raw.url),
     qr: toStringOrNull(raw.qr),
   };

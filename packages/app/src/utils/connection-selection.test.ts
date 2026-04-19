@@ -10,8 +10,8 @@ function makeDirect(id: string, endpoint: string): HostConnection {
   return { id, type: "directTcp", endpoint };
 }
 
-function makeRelay(id: string, relayEndpoint: string, daemonPublicKeyB64 = "abc"): HostConnection {
-  return { id, type: "relay", relayEndpoint, daemonPublicKeyB64 };
+function makeRemote(id: string, endpoint: string): HostConnection {
+  return { id, type: "directTcp", endpoint };
 }
 
 function probes(input: Record<string, ConnectionProbeState>): Map<string, ConnectionProbeState> {
@@ -23,8 +23,8 @@ describe("selectBestConnection", () => {
     const candidates: ConnectionCandidate[] = [
       { connectionId: "direct:a", connection: makeDirect("direct:a", "a:6767") },
       {
-        connectionId: "relay:b",
-        connection: makeRelay("relay:b", "relay.example:443"),
+        connectionId: "remote:b",
+        connection: makeRemote("remote:b", "remote.example:443"),
       },
     ];
 
@@ -32,11 +32,11 @@ describe("selectBestConnection", () => {
       candidates,
       probeByConnectionId: probes({
         "direct:a": { status: "available", latencyMs: 84 },
-        "relay:b": { status: "available", latencyMs: 34 },
+        "remote:b": { status: "available", latencyMs: 34 },
       }),
     });
 
-    expect(selected).toBe("relay:b");
+    expect(selected).toBe("remote:b");
   });
 
   it("picks the lowest-latency connection among mixed transport candidates", () => {
@@ -44,8 +44,8 @@ describe("selectBestConnection", () => {
       { connectionId: "direct:a", connection: makeDirect("direct:a", "a:6767") },
       { connectionId: "direct:c", connection: makeDirect("direct:c", "c:6767") },
       {
-        connectionId: "relay:b",
-        connection: makeRelay("relay:b", "relay.example:443"),
+        connectionId: "remote:b",
+        connection: makeRemote("remote:b", "remote.example:443"),
       },
     ];
 
@@ -54,19 +54,19 @@ describe("selectBestConnection", () => {
       probeByConnectionId: probes({
         "direct:a": { status: "available", latencyMs: 84 },
         "direct:c": { status: "available", latencyMs: 41 },
-        "relay:b": { status: "available", latencyMs: 12 },
+        "remote:b": { status: "available", latencyMs: 12 },
       }),
     });
 
-    expect(selected).toBe("relay:b");
+    expect(selected).toBe("remote:b");
   });
 
   it("ignores unavailable and pending probes", () => {
     const candidates: ConnectionCandidate[] = [
       { connectionId: "direct:a", connection: makeDirect("direct:a", "a:6767") },
       {
-        connectionId: "relay:b",
-        connection: makeRelay("relay:b", "relay.example:443"),
+        connectionId: "remote:b",
+        connection: makeRemote("remote:b", "remote.example:443"),
       },
       { connectionId: "direct:c", connection: makeDirect("direct:c", "c:6767") },
     ];
@@ -75,7 +75,7 @@ describe("selectBestConnection", () => {
       candidates,
       probeByConnectionId: probes({
         "direct:a": { status: "pending", latencyMs: null },
-        "relay:b": { status: "unavailable", latencyMs: null },
+        "remote:b": { status: "unavailable", latencyMs: null },
         "direct:c": { status: "available", latencyMs: 41 },
       }),
     });
@@ -87,8 +87,8 @@ describe("selectBestConnection", () => {
     const candidates: ConnectionCandidate[] = [
       { connectionId: "direct:a", connection: makeDirect("direct:a", "a:6767") },
       {
-        connectionId: "relay:b",
-        connection: makeRelay("relay:b", "relay.example:443"),
+        connectionId: "remote:b",
+        connection: makeRemote("remote:b", "remote.example:443"),
       },
     ];
 
@@ -96,7 +96,7 @@ describe("selectBestConnection", () => {
       candidates,
       probeByConnectionId: probes({
         "direct:a": { status: "pending", latencyMs: null },
-        "relay:b": { status: "unavailable", latencyMs: null },
+        "remote:b": { status: "unavailable", latencyMs: null },
       }),
     });
 
@@ -107,8 +107,8 @@ describe("selectBestConnection", () => {
     const candidates: ConnectionCandidate[] = [
       { connectionId: "direct:a", connection: makeDirect("direct:a", "a:6767") },
       {
-        connectionId: "relay:b",
-        connection: makeRelay("relay:b", "relay.example:443"),
+        connectionId: "remote:b",
+        connection: makeRemote("remote:b", "remote.example:443"),
       },
     ];
 
@@ -116,7 +116,7 @@ describe("selectBestConnection", () => {
       candidates,
       probeByConnectionId: probes({
         "direct:a": { status: "unavailable", latencyMs: null },
-        "relay:b": { status: "pending", latencyMs: null },
+        "remote:b": { status: "pending", latencyMs: null },
       }),
     });
 

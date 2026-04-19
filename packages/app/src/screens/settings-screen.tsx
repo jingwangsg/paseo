@@ -11,7 +11,6 @@ import {
   Moon,
   Monitor,
   ChevronDown,
-  Globe,
   Settings,
   RotateCw,
   Trash2,
@@ -136,9 +135,6 @@ const delay = (ms: number) =>
   });
 
 function formatHostConnectionLabel(connection: HostConnection): string {
-  if (connection.type === "relay") {
-    return `Relay (${connection.relayEndpoint})`;
-  }
   if (connection.type === "directSocket") {
     return `Local (${connection.path})`;
   }
@@ -155,12 +151,6 @@ function formatActiveConnectionBadge(input: {
   const { activeConnection, theme } = input;
   if (!activeConnection) {
     return null;
-  }
-  if (activeConnection.type === "relay") {
-    return {
-      icon: <Globe size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />,
-      text: "Relay",
-    };
   }
   if (activeConnection.type === "directSocket") {
     return {
