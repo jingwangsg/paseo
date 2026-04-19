@@ -25,14 +25,7 @@ function createConfig(env = process.env) {
       output: "release",
     },
     files: ["dist/**/*"],
-    asarUnpack: [
-      "dist/daemon/node-entrypoint-runner.js",
-      // The Claude Agent SDK resolves a platform-specific native binary via
-      // require.resolve(). In a packaged Electron app the binary lives inside
-      // app.asar, which child_process.spawn() cannot traverse (ENOTDIR).
-      // Unpacking ensures the binary is on the real filesystem.
-      "node_modules/@anthropic-ai/claude-agent-sdk-*/*",
-    ],
+    asarUnpack: ["dist/daemon/node-entrypoint-runner.js"],
     extraResources: [
       {
         from: "../app/dist",
