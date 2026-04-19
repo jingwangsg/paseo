@@ -32,6 +32,10 @@ export function rewriteRemoteSessionMessage(
     payload.workspaceId = rewriteMirroredId(hostAlias, payload.workspaceId);
   }
 
+  if (typeof payload.repoRoot === "string") {
+    payload.repoRoot = rewriteMirroredId(hostAlias, payload.repoRoot);
+  }
+
   if (typeof payload.projectId === "string") {
     payload.projectId = rewriteMirroredId(hostAlias, payload.projectId);
   }
@@ -90,6 +94,19 @@ export function rewriteRemoteSessionMessage(
         terminal.id = rewriteMirroredId(hostAlias, terminal.id);
       }
       return terminal;
+    });
+  }
+
+  if (Array.isArray(payload.worktrees)) {
+    payload.worktrees = payload.worktrees.map((worktreeValue) => {
+      if (!worktreeValue || typeof worktreeValue !== "object") {
+        return worktreeValue;
+      }
+      const worktree = { ...(worktreeValue as Record<string, unknown>) };
+      if (typeof worktree.worktreePath === "string") {
+        worktree.worktreePath = rewriteMirroredId(hostAlias, worktree.worktreePath);
+      }
+      return worktree;
     });
   }
 

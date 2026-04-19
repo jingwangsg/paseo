@@ -122,7 +122,7 @@ describe("rewriteRemoteSessionMessage", () => {
     });
   });
 
-  test("rewrites archive responses and checkout payload cwd values", () => {
+  test("rewrites archive responses and checkout payload path fields", () => {
     const archive = rewriteRemoteSessionMessage("osmo_9000", {
       type: "archive_workspace_response",
       payload: {
@@ -163,6 +163,43 @@ describe("rewriteRemoteSessionMessage", () => {
       },
     });
     expect((checkout as any).payload.cwd).toBe("ssh:osmo_9000:/mnt/data/repo");
+    expect((checkout as any).payload.repoRoot).toBe("ssh:osmo_9000:/mnt/data/repo");
+  });
+
+  test("rewrites worktree list response paths back into ssh namespaced values", () => {
+    const rewritten = rewriteRemoteSessionMessage("osmo_9000", {
+      type: "paseo_worktree_list_response",
+      payload: {
+        repoRoot: "/mnt/data/repo",
+        worktrees: [
+          {
+            worktreePath: "/mnt/data/repo/.paseo/worktrees/feature-a",
+            createdAt: "2026-04-20T00:00:00.000Z",
+            branchName: "feature-a",
+            head: "abc123",
+          },
+        ],
+        error: null,
+        requestId: "req-worktrees",
+      },
+    });
+
+    expect(rewritten).toEqual({
+      type: "paseo_worktree_list_response",
+      payload: {
+        repoRoot: "ssh:osmo_9000:/mnt/data/repo",
+        worktrees: [
+          {
+            worktreePath: "ssh:osmo_9000:/mnt/data/repo/.paseo/worktrees/feature-a",
+            createdAt: "2026-04-20T00:00:00.000Z",
+            branchName: "feature-a",
+            head: "abc123",
+          },
+        ],
+        error: null,
+        requestId: "req-worktrees",
+      },
+    });
   });
 
   test("does not double-prefix values that are already ssh namespaced", () => {

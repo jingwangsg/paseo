@@ -696,7 +696,7 @@ describe("remote ssh workspace routing", () => {
         payload: {
           cwd: SSH_CWD,
           isGit: true,
-          repoRoot: REMOTE_CWD,
+          repoRoot: SSH_CWD,
           currentBranch: "feature-a",
           isDirty: false,
           baseRef: "main",
@@ -711,6 +711,30 @@ describe("remote ssh workspace routing", () => {
         },
       },
     ]);
+  });
+
+  test("forwards repoRoot-only paseo_worktree_list_request through the remote proxy", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "paseo_worktree_list_request",
+      repoRoot: SSH_CWD,
+      requestId: "req-worktree-list-root",
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "paseo_worktree_list_request",
+      repoRoot: REMOTE_CWD,
+      requestId: "req-worktree-list-root",
+    });
   });
 
   test("forwards create_paseo_worktree_request and rewrites workspace / setupTerminalId", async () => {
@@ -788,6 +812,108 @@ describe("remote ssh workspace routing", () => {
           error: null,
           setupTerminalId: `ssh:${HOST_ALIAS}:${SETUP_TERMINAL_ID}`,
           requestId: "req-worktree",
+        },
+      },
+    ]);
+  });
+
+  test("deduplicates concurrent first-use proxy creation for the same host", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+    let resolveProxy: ((value: any) => void) | null = null;
+
+    createRemoteAgentProxyMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveProxy = resolve;
+        }),
+    );
+
+    const first = session.handleMessage({
+      type: "list_terminals_request",
+      cwd: SSH_CWD,
+      requestId: "req-list-1",
+    });
+    const second = session.handleMessage({
+      type: "list_terminals_request",
+      cwd: SSH_CWD,
+      requestId: "req-list-2",
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(createRemoteAgentProxyMock).toHaveBeenCalledTimes(1);
+
+    resolveProxy?.({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await Promise.all([first, second]);
+
+    expect(sendSessionMessage).toHaveBeenNthCalledWith(1, {
+      type: "list_terminals_request",
+      cwd: REMOTE_CWD,
+      requestId: "req-list-1",
+    });
+    expect(sendSessionMessage).toHaveBeenNthCalledWith(2, {
+      type: "list_terminals_request",
+      cwd: REMOTE_CWD,
+      requestId: "req-list-2",
+    });
+  });
+
+  test("preserves remote create terminal establishment errors", async () => {
+    const { session, emitted } = createSessionForRemoteWorkspaceTests();
+
+    createRemoteAgentProxyMock.mockRejectedValue(new Error("TLS broke"));
+
+    await session.handleMessage({
+      type: "create_terminal_request",
+      cwd: SSH_CWD,
+      host: HOST_ALIAS,
+      name: "shell",
+      requestId: "req-create-terminal",
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "create_terminal_response",
+        payload: {
+          terminal: null,
+          error: 'Failed to create terminal on "osmo_9000": TLS broke',
+          requestId: "req-create-terminal",
+        },
+      },
+    ]);
+  });
+
+  test("preserves remote create agent establishment errors", async () => {
+    const { session, emitted } = createSessionForRemoteWorkspaceTests();
+
+    createRemoteAgentProxyMock.mockRejectedValue(new Error("TLS broke"));
+
+    await session.handleMessage({
+      type: "create_agent_request",
+      config: {
+        provider: "codex",
+        cwd: SSH_CWD,
+      },
+      host: HOST_ALIAS,
+      labels: {},
+      requestId: "req-create-agent",
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "status",
+        payload: {
+          status: "agent_create_failed",
+          requestId: "req-create-agent",
+          error: 'Failed to connect to "osmo_9000": TLS broke',
         },
       },
     ]);

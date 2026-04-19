@@ -650,6 +650,7 @@ export class Session {
   private readonly remoteHostManager: RemoteHostManager | null;
   private remoteHostStatusListener: ((status: RemoteHostStatusEntry) => void) | null = null;
   private readonly remoteAgentProxies = new Map<string, RemoteAgentProxy>();
+  private readonly remoteAgentProxyPromises = new Map<string, Promise<RemoteAgentProxy>>();
   private readonly daemonVersion: string | null;
 
   constructor(options: SessionOptions) {
@@ -4836,9 +4837,18 @@ export class Session {
   private async handlePaseoWorktreeListRequest(
     msg: Extract<SessionInboundMessage, { type: "paseo_worktree_list_request" }>,
   ): Promise<void> {
-    const hostAlias = typeof msg.cwd === "string" ? extractHostAliasFromAgentId(msg.cwd) : null;
-    if (hostAlias && typeof msg.cwd === "string" && isSshNamespacedId(msg.cwd)) {
-      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["cwd"]);
+    const routingPath =
+      typeof msg.cwd === "string" && isSshNamespacedId(msg.cwd)
+        ? msg.cwd
+        : typeof msg.repoRoot === "string" && isSshNamespacedId(msg.repoRoot)
+          ? msg.repoRoot
+          : null;
+    const hostAlias = routingPath ? extractHostAliasFromAgentId(routingPath) : null;
+    if (hostAlias && routingPath) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, [
+        "cwd",
+        "repoRoot",
+      ]);
       if (!forwarded) {
         this.emitRemoteWorkspaceUnavailableResponse(msg);
       }
@@ -4857,10 +4867,18 @@ export class Session {
   private async handlePaseoWorktreeArchiveRequest(
     msg: Extract<SessionInboundMessage, { type: "paseo_worktree_archive_request" }>,
   ): Promise<void> {
-    const hostAlias =
-      typeof msg.worktreePath === "string" ? extractHostAliasFromAgentId(msg.worktreePath) : null;
-    if (hostAlias && typeof msg.worktreePath === "string" && isSshNamespacedId(msg.worktreePath)) {
-      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, ["worktreePath"]);
+    const routingPath =
+      typeof msg.worktreePath === "string" && isSshNamespacedId(msg.worktreePath)
+        ? msg.worktreePath
+        : typeof msg.repoRoot === "string" && isSshNamespacedId(msg.repoRoot)
+          ? msg.repoRoot
+          : null;
+    const hostAlias = routingPath ? extractHostAliasFromAgentId(routingPath) : null;
+    if (hostAlias && routingPath) {
+      const forwarded = await this.forwardRemoteWorkspaceMessage(hostAlias, msg, [
+        "worktreePath",
+        "repoRoot",
+      ]);
       if (!forwarded) {
         this.emitRemoteWorkspaceUnavailableResponse(msg);
       }
@@ -7544,7 +7562,21 @@ export class Session {
     hostAlias: string,
     msg: Extract<SessionInboundMessage, { type: "create_agent_request" }>,
   ): Promise<void> {
-    const proxy = await this.ensureRemoteProxy(hostAlias);
+    let proxy: RemoteAgentProxy | null = null;
+    try {
+      proxy = await this.ensureRemoteProxy(hostAlias, { propagateCreateError: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "status",
+        payload: {
+          status: "agent_create_failed",
+          requestId: msg.requestId,
+          error: `Failed to connect to "${hostAlias}": ${message}`,
+        },
+      });
+      return;
+    }
     if (!proxy) {
       this.emit({
         type: "status",
@@ -7582,7 +7614,21 @@ export class Session {
     hostAlias: string,
     msg: CreateTerminalRequest,
   ): Promise<void> {
-    const proxy = await this.ensureRemoteProxy(hostAlias);
+    let proxy: RemoteAgentProxy | null = null;
+    try {
+      proxy = await this.ensureRemoteProxy(hostAlias, { propagateCreateError: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "create_terminal_response",
+        payload: {
+          terminal: null,
+          error: `Failed to create terminal on "${hostAlias}": ${message}`,
+          requestId: msg.requestId,
+        },
+      });
+      return;
+    }
     if (!proxy) {
       this.emit({
         type: "create_terminal_response",
@@ -7616,32 +7662,53 @@ export class Session {
     }
   }
 
-  private async ensureRemoteProxy(hostAlias: string): Promise<RemoteAgentProxy | null> {
+  private async ensureRemoteProxy(
+    hostAlias: string,
+    options?: { propagateCreateError?: boolean },
+  ): Promise<RemoteAgentProxy | null> {
     const existing = this.remoteAgentProxies.get(hostAlias);
     if (existing?.alive) {
       return existing;
     }
 
-    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
-    if (!tunnelPort) {
-      this.sessionLogger.warn({ hostAlias }, "Remote proxy not available");
-      return null;
+    let pending = this.remoteAgentProxyPromises.get(hostAlias);
+    if (!pending) {
+      const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
+      if (!tunnelPort) {
+        this.sessionLogger.warn({ hostAlias }, "Remote proxy not available");
+        return null;
+      }
+
+      pending = (async () => {
+        try {
+          const proxy = await createRemoteAgentProxy({
+            hostAlias,
+            tunnelPort,
+            daemonVersion: this.daemonVersion ?? "0.0.0",
+            logger: this.sessionLogger,
+            onSessionMessage: (remoteMsg) => {
+              this.handleRemoteAgentResponse(hostAlias, remoteMsg);
+            },
+          });
+          this.remoteAgentProxies.set(hostAlias, proxy);
+          return proxy;
+        } catch (err) {
+          this.sessionLogger.warn({ err, hostAlias }, "Failed to establish remote proxy");
+          throw err;
+        } finally {
+          this.remoteAgentProxyPromises.delete(hostAlias);
+        }
+      })();
+      this.remoteAgentProxyPromises.set(hostAlias, pending);
     }
 
     try {
-      const proxy = await createRemoteAgentProxy({
-        hostAlias,
-        tunnelPort,
-        daemonVersion: this.daemonVersion ?? "0.0.0",
-        logger: this.sessionLogger,
-        onSessionMessage: (remoteMsg) => {
-          this.handleRemoteAgentResponse(hostAlias, remoteMsg);
-        },
-      });
-      this.remoteAgentProxies.set(hostAlias, proxy);
+      const proxy = await pending;
       return proxy;
     } catch (err) {
-      this.sessionLogger.warn({ err, hostAlias }, "Failed to establish remote proxy");
+      if (options?.propagateCreateError) {
+        throw err;
+      }
       return null;
     }
   }
@@ -7649,7 +7716,7 @@ export class Session {
   private async forwardRemoteWorkspaceMessage(
     hostAlias: string,
     msg: Record<string, unknown>,
-    fieldsToStrip: Array<"cwd" | "workspaceId" | "worktreePath">,
+    fieldsToStrip: Array<"cwd" | "workspaceId" | "worktreePath" | "repoRoot">,
   ): Promise<boolean> {
     const proxy = await this.ensureRemoteProxy(hostAlias);
     if (!proxy?.alive) {
