@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { View, Text, Pressable } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 export type RemoteHostStatus =
@@ -14,6 +14,12 @@ interface SidebarHostGroupProps {
   hostAlias: string | null;
   status: RemoteHostStatus;
   projectCount: number;
+  error?: string | null;
+  onRetry?: () => void;
+}
+
+function isRetryable(status: RemoteHostStatus): boolean {
+  return status === "failed" || status === "unreachable";
 }
 
 function getStatusDotColor(
@@ -51,13 +57,20 @@ function getStatusLabel(status: RemoteHostStatus): string | null {
   }
 }
 
-export function SidebarHostGroup({ hostAlias, status, projectCount }: SidebarHostGroupProps) {
+export function SidebarHostGroup({
+  hostAlias,
+  status,
+  projectCount,
+  error,
+  onRetry,
+}: SidebarHostGroupProps) {
   const { theme } = useUnistyles();
   const dotColor = getStatusDotColor(theme, status);
   const statusLabel = getStatusLabel(status);
   const displayName = hostAlias ?? "Local";
+  const retryable = isRetryable(status);
 
-  return (
+  const header = (
     <View style={styles.container} testID="sidebar-host-group">
       <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
       <Text style={styles.label} numberOfLines={1}>
@@ -69,6 +82,28 @@ export function SidebarHostGroup({ hostAlias, status, projectCount }: SidebarHos
         </Text>
       ) : null}
     </View>
+  );
+
+  if (!retryable) {
+    return header;
+  }
+
+  return (
+    <Pressable
+      onPress={onRetry}
+      accessibilityRole="button"
+      accessibilityLabel={`Retry ${displayName}`}
+    >
+      {header}
+      <View style={styles.errorContainer}>
+        {error ? (
+          <Text style={styles.errorText} numberOfLines={2}>
+            {error}
+          </Text>
+        ) : null}
+        <Text style={styles.retryHint}>Tap to retry</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -100,5 +135,21 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     opacity: 0.7,
     flexShrink: 0,
+  },
+  errorContainer: {
+    paddingHorizontal: theme.spacing[3],
+    paddingLeft: theme.spacing[3] + 6 + theme.spacing[2],
+    paddingBottom: theme.spacing[1],
+  },
+  errorText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    opacity: 0.6,
+  },
+  retryHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    opacity: 0.5,
+    fontStyle: "italic",
   },
 }));

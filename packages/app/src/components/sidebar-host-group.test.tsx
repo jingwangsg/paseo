@@ -6,6 +6,8 @@ vi.mock("react-native", () => ({
   View: ({ children, testID, style, ...props }: any) =>
     React.createElement("view", { ...props, "data-testid": testID, style }, children),
   Text: ({ children, ...props }: any) => React.createElement("span", props, children),
+  Pressable: ({ children, onPress, ...props }: any) =>
+    React.createElement("button", { ...props, onClick: onPress }, children),
 }));
 
 vi.mock("react-native-unistyles", () => {
@@ -63,5 +65,58 @@ describe("SidebarHostGroup", () => {
     );
     expect(markup).toContain("devbox");
     expect(markup).toContain("Connecting");
+  });
+
+  test("renders failed state with error message", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup
+        hostAlias="osmo_9000"
+        status="failed"
+        projectCount={0}
+        error="No pre-built binary for x64-linux"
+      />,
+    );
+    expect(markup).toContain("osmo_9000");
+    expect(markup).toContain("Failed");
+    expect(markup).toContain("No pre-built binary for x64-linux");
+    expect(markup).toContain("Tap to retry");
+  });
+
+  test("calls onRetry when tapped in failed state", () => {
+    const onRetry = vi.fn();
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup hostAlias="osmo_9000" status="failed" projectCount={0} onRetry={onRetry} />,
+    );
+    expect(markup).toContain("Tap to retry");
+  });
+
+  test("does not show retry hint when status is ready", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup hostAlias="osmo_9000" status="ready" projectCount={2} />,
+    );
+    expect(markup).not.toContain("Tap to retry");
+    expect(markup).not.toContain("Failed");
+  });
+
+  test("shows retry hint for unreachable state", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup
+        hostAlias="osmo_9000"
+        status="unreachable"
+        projectCount={0}
+        error="SSH connection failed"
+      />,
+    );
+    expect(markup).toContain("Unreachable");
+    expect(markup).toContain("SSH connection failed");
+    expect(markup).toContain("Tap to retry");
+  });
+
+  test("does not show error text when error is null", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup hostAlias="osmo_9000" status="failed" projectCount={0} error={null} />,
+    );
+    expect(markup).toContain("Failed");
+    expect(markup).toContain("Tap to retry");
   });
 });
