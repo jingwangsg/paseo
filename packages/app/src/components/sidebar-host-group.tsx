@@ -16,6 +16,7 @@ interface SidebarHostGroupProps {
   projectCount: number;
   error?: string | null;
   onRetry?: () => void;
+  onAddProject?: () => void;
 }
 
 function isRetryable(status: RemoteHostStatus): boolean {
@@ -63,12 +64,14 @@ export function SidebarHostGroup({
   projectCount,
   error,
   onRetry,
+  onAddProject,
 }: SidebarHostGroupProps) {
   const { theme } = useUnistyles();
   const dotColor = getStatusDotColor(theme, status);
   const statusLabel = getStatusLabel(status);
   const displayName = hostAlias ?? "Local";
   const retryable = isRetryable(status);
+  const showAddProject = hostAlias !== null && status === "ready" && !!onAddProject;
 
   const header = (
     <View style={styles.container} testID="sidebar-host-group">
@@ -80,6 +83,15 @@ export function SidebarHostGroup({
         <Text style={styles.statusText} numberOfLines={1}>
           {statusLabel}
         </Text>
+      ) : null}
+      {showAddProject ? (
+        <Pressable
+          onPress={onAddProject}
+          style={styles.addButton}
+          accessibilityLabel={`Add project to ${displayName}`}
+        >
+          <Text style={styles.addButtonText}>+</Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -151,5 +163,14 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     opacity: 0.5,
     fontStyle: "italic",
+  },
+  addButton: {
+    marginLeft: "auto",
+    paddingHorizontal: theme.spacing[2],
+  },
+  addButtonText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
   },
 }));
