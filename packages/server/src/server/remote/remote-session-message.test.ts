@@ -2,6 +2,56 @@ import { describe, expect, test } from "vitest";
 import { rewriteRemoteSessionMessage } from "./remote-session-message.js";
 
 describe("rewriteRemoteSessionMessage", () => {
+  test("preserves the legacy agent, final, and terminal rewrite paths from session.ts", () => {
+    const rewritten = rewriteRemoteSessionMessage("osmo_9000", {
+      type: "wait_for_finish_response",
+      agentId: "agent-top-level",
+      payload: {
+        agentId: "agent-in-payload",
+        agent: {
+          id: "agent-object-id",
+          status: "idle",
+        },
+        final: {
+          id: "final-agent-id",
+          lastError: null,
+        },
+        terminalId: "terminal-payload-id",
+        terminal: {
+          id: "terminal-object-id",
+          name: "shell",
+        },
+        requestId: "req-legacy",
+        status: "idle",
+        error: null,
+      },
+    });
+
+    expect(rewritten).toEqual({
+      type: "wait_for_finish_response",
+      agentId: "ssh:osmo_9000:agent-top-level",
+      payload: {
+        agentId: "ssh:osmo_9000:agent-in-payload",
+        agent: {
+          id: "ssh:osmo_9000:agent-object-id",
+          status: "idle",
+        },
+        final: {
+          id: "ssh:osmo_9000:final-agent-id",
+          lastError: null,
+        },
+        terminalId: "ssh:osmo_9000:terminal-payload-id",
+        terminal: {
+          id: "ssh:osmo_9000:terminal-object-id",
+          name: "shell",
+        },
+        requestId: "req-legacy",
+        status: "idle",
+        error: null,
+      },
+    });
+  });
+
   test("rewrites terminal and cwd payloads back into ssh namespaced identities", () => {
     const rewritten = rewriteRemoteSessionMessage("osmo_9000", {
       type: "list_terminals_response",
@@ -113,5 +163,63 @@ describe("rewriteRemoteSessionMessage", () => {
       },
     });
     expect((checkout as any).payload.cwd).toBe("ssh:osmo_9000:/mnt/data/repo");
+  });
+
+  test("does not double-prefix values that are already ssh namespaced", () => {
+    const rewritten = rewriteRemoteSessionMessage("osmo_9000", {
+      type: "agent_update",
+      agentId: "ssh:osmo_9000:agent-top-level",
+      payload: {
+        agentId: "ssh:osmo_9000:agent-in-payload",
+        cwd: "ssh:osmo_9000:/mnt/data/repo",
+        workspaceId: "ssh:osmo_9000:/mnt/data/repo/.paseo/worktrees/feature-a",
+        projectId: "ssh:osmo_9000:/mnt/data/repo",
+        terminalId: "ssh:osmo_9000:term-1",
+        setupTerminalId: "ssh:osmo_9000:term-setup",
+        workspace: {
+          id: "ssh:osmo_9000:/mnt/data/repo/.paseo/worktrees/feature-a",
+          projectId: "ssh:osmo_9000:/mnt/data/repo",
+          executionHost: { kind: "local" },
+        },
+        agent: {
+          id: "ssh:osmo_9000:agent-object-id",
+        },
+        final: {
+          id: "ssh:osmo_9000:final-agent-id",
+        },
+        terminal: {
+          id: "ssh:osmo_9000:terminal-object-id",
+        },
+        terminals: [{ id: "ssh:osmo_9000:term-2", name: "shell" }],
+      },
+    });
+
+    expect(rewritten).toEqual({
+      type: "agent_update",
+      agentId: "ssh:osmo_9000:agent-top-level",
+      payload: {
+        agentId: "ssh:osmo_9000:agent-in-payload",
+        cwd: "ssh:osmo_9000:/mnt/data/repo",
+        workspaceId: "ssh:osmo_9000:/mnt/data/repo/.paseo/worktrees/feature-a",
+        projectId: "ssh:osmo_9000:/mnt/data/repo",
+        terminalId: "ssh:osmo_9000:term-1",
+        setupTerminalId: "ssh:osmo_9000:term-setup",
+        workspace: {
+          id: "ssh:osmo_9000:/mnt/data/repo/.paseo/worktrees/feature-a",
+          projectId: "ssh:osmo_9000:/mnt/data/repo",
+          executionHost: { kind: "ssh", hostAlias: "osmo_9000" },
+        },
+        agent: {
+          id: "ssh:osmo_9000:agent-object-id",
+        },
+        final: {
+          id: "ssh:osmo_9000:final-agent-id",
+        },
+        terminal: {
+          id: "ssh:osmo_9000:terminal-object-id",
+        },
+        terminals: [{ id: "ssh:osmo_9000:term-2", name: "shell" }],
+      },
+    });
   });
 });
