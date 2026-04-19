@@ -225,7 +225,14 @@ function applyRuntimeSettingsToClaudeOptions(
       // When the SDK passes a native binary path (from pathToClaudeCodeExecutable)
       // or the user overrides the command via runtime settings, use that directly.
       const isDefaultRuntime = resolved.command === "node" || resolved.command === "bun";
-      const command = isDefaultRuntime ? process.execPath : resolved.command;
+      let command = isDefaultRuntime ? process.execPath : resolved.command;
+      // In packaged Electron apps the SDK may resolve its native binary to a
+      // path inside app.asar (e.g. …/app.asar/node_modules/…/claude).
+      // child_process.spawn() can't traverse the ASAR file (ENOTDIR).
+      // Rewrite to the unpacked location which lives on the real filesystem.
+      if (!isDefaultRuntime && /\.asar[/\\]/.test(command)) {
+        command = command.replace(/\.asar([/\\])/, ".asar.unpacked$1");
+      }
       const child = spawnProcess(command, resolved.args, {
         cwd: spawnOptions.cwd,
         env: {

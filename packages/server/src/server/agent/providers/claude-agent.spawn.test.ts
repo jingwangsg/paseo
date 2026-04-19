@@ -100,4 +100,93 @@ describe("Claude spawn override", () => {
     const spawnOptions = spawnSpy.mock.calls[0]?.[2];
     expect(spawnOptions?.shell).toBe(false);
   });
+
+  test("rewrites ASAR-internal native binary path to unpacked location", async () => {
+    let capturedOptions: Options | undefined;
+    const queryFactory = vi.fn(({ options }: Parameters<typeof query>[0]) => {
+      capturedOptions = options;
+      return createQueryMock([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "claude-asar-rewrite-session",
+          permissionMode: "default",
+          model: "opus",
+        },
+        { type: "assistant", message: { content: "done" } },
+        {
+          type: "result",
+          subtype: "success",
+          usage: { input_tokens: 1, cache_read_input_tokens: 0, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]);
+    });
+    const spawnSpy = vi.spyOn(spawnUtils, "spawnProcess").mockReturnValue(createChildProcessStub());
+    const client = new ClaudeAgentClient({ logger: createTestLogger(), queryFactory });
+    const session = await client.createSession({ provider: "claude", cwd: process.cwd() });
+
+    try {
+      await session.run("asar rewrite test");
+      capturedOptions?.spawnClaudeCodeProcess?.({
+        command:
+          "/Applications/Paseo.app/Contents/Resources/app.asar/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+        args: ["--output-format", "stream-json"],
+        cwd: process.cwd(),
+        env: {},
+        signal: new AbortController().signal,
+      } satisfies ClaudeSpawnOptions);
+    } finally {
+      await session.close();
+    }
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [spawnCommand] = spawnSpy.mock.calls[0]!;
+    expect(spawnCommand).toBe(
+      "/Applications/Paseo.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+    );
+  });
+
+  test("does not rewrite non-ASAR native binary paths", async () => {
+    let capturedOptions: Options | undefined;
+    const queryFactory = vi.fn(({ options }: Parameters<typeof query>[0]) => {
+      capturedOptions = options;
+      return createQueryMock([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "claude-no-asar-rewrite-session",
+          permissionMode: "default",
+          model: "opus",
+        },
+        { type: "assistant", message: { content: "done" } },
+        {
+          type: "result",
+          subtype: "success",
+          usage: { input_tokens: 1, cache_read_input_tokens: 0, output_tokens: 1 },
+          total_cost_usd: 0,
+        },
+      ]);
+    });
+    const spawnSpy = vi.spyOn(spawnUtils, "spawnProcess").mockReturnValue(createChildProcessStub());
+    const client = new ClaudeAgentClient({ logger: createTestLogger(), queryFactory });
+    const session = await client.createSession({ provider: "claude", cwd: process.cwd() });
+
+    try {
+      await session.run("no asar rewrite test");
+      capturedOptions?.spawnClaudeCodeProcess?.({
+        command: "/usr/local/bin/claude",
+        args: ["--output-format", "stream-json"],
+        cwd: process.cwd(),
+        env: {},
+        signal: new AbortController().signal,
+      } satisfies ClaudeSpawnOptions);
+    } finally {
+      await session.close();
+    }
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [spawnCommand] = spawnSpy.mock.calls[0]!;
+    expect(spawnCommand).toBe("/usr/local/bin/claude");
+  });
 });
