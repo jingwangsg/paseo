@@ -45,9 +45,10 @@ export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
 
 export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
   try {
-    // Verify both PID liveness AND process name to avoid false positives from PID reuse
+    // Verify both PID liveness AND process name to avoid false positives from PID reuse.
+    // Match both SEA binary (paseo-daemon) and JS bundle (daemon.cjs) process names.
     const result = await ssh.exec(
-      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon`,
+      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -qE "paseo-daemon|daemon\\.cjs"`,
     );
     return result.exitCode === 0;
   } catch {
@@ -59,8 +60,8 @@ export function buildKillScript(): string {
   return [
     `pid=$(${EXTRACT_PID_CMD})`,
     `if [ -n "$pid" ]; then`,
-    // Verify the process is actually a paseo daemon before killing
-    `  if ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon; then`,
+    // Verify the process is actually a paseo daemon (SEA or bundle) before killing
+    `  if ps -p "$pid" -o args= 2>/dev/null | grep -qE "paseo-daemon|daemon\\.cjs"; then`,
     `    kill "$pid" 2>/dev/null`,
     `    for i in 1 2 3; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done`,
     `  fi`,
@@ -87,17 +88,17 @@ export async function startRemoteDaemon(ssh: SshClient, logger: Logger): Promise
   logger.info("Remote daemon start command issued");
 }
 
+const PORT_CHECK_CMD = `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`;
+
 export async function waitForRemoteDaemon(ssh: SshClient, logger: Logger): Promise<boolean> {
   for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
-    const running = await isRemoteDaemonRunning(ssh);
-    if (running) {
-      const portCheck = await ssh.exec(
-        `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
-      );
-      if (portCheck.exitCode === 0) {
-        logger.info("Remote daemon is ready");
-        return true;
-      }
+    // Check if the port is listening — this is the definitive readiness check.
+    // PID file may not exist yet (especially for bundle-mode starts), so we
+    // accept port-only as sufficient.
+    const portCheck = await ssh.exec(PORT_CHECK_CMD);
+    if (portCheck.exitCode === 0) {
+      logger.info("Remote daemon is ready");
+      return true;
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
