@@ -132,8 +132,7 @@ Single file, validated with `PersistedConfigSchema`.
     listen: "127.0.0.1:6767",
     hostnames: true | string[],
     mcp: { enabled: boolean },
-    cors: { allowedOrigins: string[] },
-    relay: { enabled: boolean, endpoint: string, publicEndpoint: string }
+    cors: { allowedOrigins: string[] }
   },
   app: {
     baseUrl: string

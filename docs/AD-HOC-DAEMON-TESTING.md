@@ -29,8 +29,6 @@ const daemon = await createPaseoDaemon(
     mcpDebug: false,
     agentClients: {},
     agentStoragePath: path.join(paseoHome, "agents"),
-    relayEnabled: false,
-    relayEndpoint: "relay.paseo.sh:443",
     appBaseUrl: "https://app.paseo.sh",
     // Add custom config here, e.g.:
     // providerOverrides: { ... },
