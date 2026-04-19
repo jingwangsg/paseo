@@ -183,6 +183,8 @@ import {
   rewriteRemoteAgentId,
   rewriteLocalAgentId,
   isRemoteAgentId,
+  isSshNamespacedId,
+  stripSshNamespace,
   extractHostAliasFromAgentId,
   type RemoteAgentProxy,
 } from "./remote/remote-agent-proxy.js";
@@ -3958,6 +3960,31 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "checkout_status_request" }>,
   ): Promise<void> {
     const { cwd, requestId } = msg;
+
+    // SSH-namespaced paths refer to remote hosts — skip local git inspection.
+    if (isSshNamespacedId(cwd)) {
+      this.emit({
+        type: "checkout_status_response",
+        payload: {
+          cwd,
+          isGit: false,
+          repoRoot: null,
+          currentBranch: null,
+          isDirty: null,
+          baseRef: null,
+          aheadBehind: null,
+          aheadOfOrigin: null,
+          behindOfOrigin: null,
+          hasRemote: false,
+          remoteUrl: null,
+          isPaseoOwnedWorktree: false,
+          error: null,
+          requestId,
+        },
+      });
+      return;
+    }
+
     const resolvedCwd = expandTilde(cwd);
 
     try {
@@ -7346,8 +7373,12 @@ export class Session {
         this.remoteAgentProxies.set(hostAlias, proxy);
       }
 
-      // Forward without host field
+      // Forward without host field.  Strip the SSH namespace from the cwd
+      // so the remote daemon receives a plain local path it can resolve.
       const { host, ...remoteMsg } = msg;
+      if (remoteMsg.config && isSshNamespacedId(remoteMsg.config.cwd)) {
+        remoteMsg.config = { ...remoteMsg.config, cwd: stripSshNamespace(remoteMsg.config.cwd) };
+      }
       proxy.sendSessionMessage(remoteMsg);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -7357,6 +7388,58 @@ export class Session {
           status: "agent_create_failed",
           requestId: msg.requestId,
           error: `Failed to connect to "${hostAlias}": ${message}`,
+        },
+      });
+    }
+  }
+
+  private async handleRemoteCreateTerminal(
+    hostAlias: string,
+    msg: CreateTerminalRequest,
+  ): Promise<void> {
+    const tunnelPort = this.remoteHostManager?.getTunnelPort(hostAlias);
+    if (!tunnelPort) {
+      this.emit({
+        type: "create_terminal_response",
+        payload: {
+          terminal: null,
+          error: `Remote host "${hostAlias}" is not connected`,
+          requestId: msg.requestId,
+        },
+      });
+      return;
+    }
+
+    try {
+      let proxy = this.remoteAgentProxies.get(hostAlias);
+      if (!proxy?.alive) {
+        proxy = await createRemoteAgentProxy({
+          hostAlias,
+          tunnelPort,
+          daemonVersion: this.daemonVersion ?? "0.0.0",
+          logger: this.sessionLogger,
+          onSessionMessage: (remoteMsg) => {
+            this.handleRemoteAgentResponse(hostAlias, remoteMsg);
+          },
+        });
+        this.remoteAgentProxies.set(hostAlias, proxy);
+      }
+
+      // Forward without host field.  Strip SSH namespace from cwd
+      // so the remote daemon receives a plain local path.
+      const { host, ...remoteMsg } = msg;
+      if (isSshNamespacedId(remoteMsg.cwd)) {
+        remoteMsg.cwd = stripSshNamespace(remoteMsg.cwd);
+      }
+      proxy.sendSessionMessage(remoteMsg);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "create_terminal_response",
+        payload: {
+          terminal: null,
+          error: `Failed to create terminal on "${hostAlias}": ${message}`,
+          requestId: msg.requestId,
         },
       });
     }
@@ -8421,6 +8504,12 @@ export class Session {
   }
 
   private async handleCreateTerminalRequest(msg: CreateTerminalRequest): Promise<void> {
+    const hostAlias = msg.host;
+    if (hostAlias && this.remoteHostManager) {
+      await this.handleRemoteCreateTerminal(hostAlias, msg);
+      return;
+    }
+
     if (!this.terminalManager) {
       this.emit({
         type: "create_terminal_response",
