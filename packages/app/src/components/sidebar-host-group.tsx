@@ -87,6 +87,8 @@ export function SidebarHostGroup({
       {showAddProject ? (
         <Pressable
           onPress={onAddProject}
+          testID={`sidebar-host-add-project-${hostAlias}`}
+          nativeID={`sidebar-host-add-project-${hostAlias}`}
           style={styles.addButton}
           accessibilityLabel={`Add project to ${displayName}`}
         >

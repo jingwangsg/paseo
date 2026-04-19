@@ -1,0 +1,91 @@
+appId: sh.paseo
+---
+- launchApp:
+    clearState: true
+- runFlow: flows/dev-client.yaml
+
+- tapOn:
+    id: "menu-button"
+- extendedWaitUntil:
+    visible:
+      id: "sidebar-settings"
+    timeout: 15000
+- tapOn:
+    id: "sidebar-settings"
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 15000
+
+- tapOn: "+ Add connection"
+- extendedWaitUntil:
+    visible:
+      id: "add-host-method-modal"
+    timeout: 10000
+- tapOn: "SSH host"
+- extendedWaitUntil:
+    visible:
+      id: "add-ssh-host-modal"
+    timeout: 10000
+- tapOn: "e.g. my-dev-server"
+- eraseText
+- inputText: ${REMOTE_ALIAS}
+- tapOn: "Add host"
+
+- tapOn:
+    id: "menu-button"
+- extendedWaitUntil:
+    visible:
+      id: "sidebar-host-add-project-${REMOTE_ALIAS}"
+    timeout: 90000
+- tapOn:
+    id: "sidebar-host-add-project-${REMOTE_ALIAS}"
+- extendedWaitUntil:
+    visible:
+      id: "open-remote-project-modal"
+    timeout: 10000
+- tapOn: "e.g. /home/user/my-project"
+- eraseText
+- inputText: ${REMOTE_CWD}
+- tapOn: "Open project"
+
+- extendedWaitUntil:
+    visible:
+      id: "workspace-header-title"
+    timeout: 90000
+- assertVisible: ${REMOTE_BRANCH}
+- assertVisible: ${REMOTE_PROJECT_NAME}
+
+- tapOn:
+    id: "workspace-explorer-toggle"
+- extendedWaitUntil:
+    visible:
+      id: "explorer-header"
+    timeout: 10000
+- tapOn:
+    id: "explorer-tab-files"
+- assertVisible: "README.md"
+- tapOn:
+    id: "explorer-tab-changes"
+- assertVisible:
+    id: "changes-branch"
+- assertVisible: ${REMOTE_BRANCH}
+
+- tapOn:
+    id: "workspace-explorer-toggle"
+- tapOn:
+    id: "workspace-header-menu-trigger"
+- tapOn:
+    id: "workspace-header-new-terminal"
+- assertVisible:
+    id: "terminal-attach-loading"
+- assertNotVisible:
+    id: "terminal-attach-loading"
+
+- tapOn:
+    id: "workspace-header-menu-trigger"
+- tapOn:
+    id: "workspace-header-new-agent"
+- extendedWaitUntil:
+    visible:
+      id: "working-directory-select"
+    timeout: 30000

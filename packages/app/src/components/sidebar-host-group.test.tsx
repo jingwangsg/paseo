@@ -6,8 +6,12 @@ vi.mock("react-native", () => ({
   View: ({ children, testID, style, ...props }: any) =>
     React.createElement("view", { ...props, "data-testid": testID, style }, children),
   Text: ({ children, ...props }: any) => React.createElement("span", props, children),
-  Pressable: ({ children, onPress, ...props }: any) =>
-    React.createElement("button", { ...props, onClick: onPress }, children),
+  Pressable: ({ children, onPress, testID, style, ...props }: any) =>
+    React.createElement(
+      "button",
+      { ...props, "data-testid": testID, onClick: onPress, style },
+      children,
+    ),
 }));
 
 vi.mock("react-native-unistyles", () => {
@@ -132,6 +136,18 @@ describe("SidebarHostGroup", () => {
     );
     expect(markup).toContain("+");
     expect(markup).toContain("Add project to osmo_9000");
+  });
+
+  test("uses a stable add-project test id for ready remote hosts", () => {
+    const markup = renderToStaticMarkup(
+      <SidebarHostGroup
+        hostAlias="osmo_9000"
+        status="ready"
+        projectCount={0}
+        onAddProject={() => {}}
+      />,
+    );
+    expect(markup).toContain('data-testid="sidebar-host-add-project-osmo_9000"');
   });
 
   test("does not show add-project button for local host", () => {

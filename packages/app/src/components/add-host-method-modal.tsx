@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import React, { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Link2, Terminal } from "lucide-react-native";
@@ -74,7 +74,7 @@ export function AddHostMethodModal({
         </View>
       </Pressable>
 
-      {isDesktopApp && onSshHost ? (
+      {onSshHost ? (
         <Pressable style={styles.option} onPress={handleSsh} accessibilityLabel="SSH host">
           <Terminal size={18} color={theme.colors.foreground} />
           <View style={styles.optionBody}>

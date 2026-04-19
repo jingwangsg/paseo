@@ -140,6 +140,48 @@ for i in $(seq 1 "$ITERATIONS"); do
 done
 ```
 
+### Native remote workspace parity
+
+`packages/app/maestro/test-remote-workspace-parity.sh` drives the native iOS dev client against a real SSH-backed remote workspace. The runner owns the whole setup:
+
+1. Creates a deterministic git fixture repo on the remote host.
+2. Starts an isolated local daemon with its own `PASEO_HOME`.
+3. Starts Expo Metro pointed at that daemon.
+4. Boots an iOS simulator.
+5. Runs `packages/app/maestro/remote-workspace-parity.yaml`.
+6. Cleans up local processes and the remote fixture even when the flow fails.
+
+Run it with:
+
+```bash
+bash packages/app/maestro/test-remote-workspace-parity.sh osmo_9000
+```
+
+Required local prerequisites:
+
+- `maestro` must be installed and available on `PATH` or at `~/.maestro/bin/maestro`.
+- `xcrun simctl list devices available` must show at least one iOS simulator device.
+- `ssh <alias>` must resolve for the target remote host.
+- The dev client with bundle id `sh.paseo` must already be installed on the simulator.
+
+The flow covers:
+
+- launching the native dev client
+- adding the SSH host from native settings
+- opening the remote project on `${REMOTE_ALIAS}` with `${REMOTE_CWD}`
+- asserting the workspace header
+- verifying the Files tab shows `README.md`
+- verifying the Changes tab shows the branch header
+- creating a terminal from the workspace header menu and waiting for attach loading to disappear
+- opening the New agent flow and asserting `working-directory-select`
+
+The runner prints its artifact directory on exit. On failure, inspect:
+
+- `daemon.log`
+- `metro.log`
+- `maestro.log`
+- `failure-state.png` when screenshot capture succeeds
+
 ## Unistyles + Reanimated
 
 ### The crash
