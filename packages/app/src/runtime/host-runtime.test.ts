@@ -1289,5 +1289,4 @@ describe("HostRuntimeStore", () => {
 
     store.syncHosts([]);
   });
-
 });

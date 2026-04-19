@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { QrCode, Link2, ClipboardPaste, ExternalLink } from "lucide-react-native";
+import { Link2, ExternalLink } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { HostProfile } from "@/types/host-connection";
 import {
@@ -12,20 +12,19 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { AddHostModal } from "./add-host-modal";
-import { PairLinkModal } from "./pair-link-modal";
 import { resolveAppVersion } from "@/utils/app-version";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { buildHostRootRoute } from "@/utils/host-routes";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
 import { openExternalUrl } from "@/utils/open-external-url";
-import { isWeb, isNative } from "@/constants/platform";
+import { isNative } from "@/constants/platform";
 
 type WelcomeAction = {
-  key: "scan-qr" | "direct-connection" | "paste-pairing-link";
+  key: "direct-connection";
   label: string;
   testID: string;
   primary: boolean;
-  icon: typeof QrCode;
+  icon: typeof Link2;
   onPress: () => void;
 };
 
@@ -238,7 +237,6 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
   const appVersion = resolveAppVersion();
   const appVersionText = formatVersionWithPrefix(appVersion);
   const [isDirectOpen, setIsDirectOpen] = useState(false);
-  const [isPasteLinkOpen, setIsPasteLinkOpen] = useState(false);
   const hosts = useHosts();
   const anyOnlineServerId = useAnyHostOnline(hosts.map((h) => h.serverId));
 
@@ -256,51 +254,16 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
     [router],
   );
 
-  const actions: WelcomeAction[] = isWeb
-    ? [
-        {
-          key: "direct-connection",
-          label: "Direct connection",
-          testID: "welcome-direct-connection",
-          primary: true,
-          icon: Link2,
-          onPress: () => setIsDirectOpen(true),
-        },
-        {
-          key: "paste-pairing-link",
-          label: "Paste pairing link",
-          testID: "welcome-paste-pairing-link",
-          primary: false,
-          icon: ClipboardPaste,
-          onPress: () => setIsPasteLinkOpen(true),
-        },
-      ]
-    : [
-        {
-          key: "scan-qr",
-          label: "Scan QR code",
-          testID: "welcome-scan-qr",
-          primary: true,
-          icon: QrCode,
-          onPress: () => router.push("/pair-scan?source=onboarding"),
-        },
-        {
-          key: "direct-connection",
-          label: "Direct connection",
-          testID: "welcome-direct-connection",
-          primary: false,
-          icon: Link2,
-          onPress: () => setIsDirectOpen(true),
-        },
-        {
-          key: "paste-pairing-link",
-          label: "Paste pairing link",
-          testID: "welcome-paste-pairing-link",
-          primary: false,
-          icon: ClipboardPaste,
-          onPress: () => setIsPasteLinkOpen(true),
-        },
-      ];
+  const actions: WelcomeAction[] = [
+    {
+      key: "direct-connection",
+      label: "Direct connection",
+      testID: "welcome-direct-connection",
+      primary: true,
+      icon: Link2,
+      onPress: () => setIsDirectOpen(true),
+    },
+  ];
 
   const showHostList = hosts.length > 0 && !anyOnlineServerId;
 
@@ -368,15 +331,6 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
       <AddHostModal
         visible={isDirectOpen}
         onClose={() => setIsDirectOpen(false)}
-        onSaved={({ profile, serverId }) => {
-          onHostAdded?.(profile);
-          finishOnboarding(serverId);
-        }}
-      />
-
-      <PairLinkModal
-        visible={isPasteLinkOpen}
-        onClose={() => setIsPasteLinkOpen(false)}
         onSaved={({ profile, serverId }) => {
           onHostAdded?.(profile);
           finishOnboarding(serverId);

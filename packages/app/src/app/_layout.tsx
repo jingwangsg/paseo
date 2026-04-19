@@ -19,11 +19,7 @@ import { useFaviconStatus } from "@/hooks/use-favicon-status";
 import { View, Text } from "react-native";
 import { UnistylesRuntime, useUnistyles } from "react-native-unistyles";
 import { QueryClientProvider } from "@tanstack/react-query";
-import {
-  getHostRuntimeStore,
-  useHosts,
-  useHostRuntimeClient,
-} from "@/runtime/host-runtime";
+import { getHostRuntimeStore, useHosts, useHostRuntimeClient } from "@/runtime/host-runtime";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { loadSettingsFromStorage } from "@/hooks/use-settings";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -755,7 +751,6 @@ function RootStack() {
       <Stack.Protected guard={storeReady}>
         <Stack.Screen name="welcome" />
         <Stack.Screen name="settings" />
-        <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen
         name="h/[serverId]/workspace/[workspaceId]"

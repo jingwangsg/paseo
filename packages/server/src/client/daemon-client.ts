@@ -72,7 +72,6 @@ import type {
   AgentSessionConfig,
 } from "../server/agent/agent-sdk-types.js";
 import type { MutableDaemonConfig, MutableDaemonConfigPatch } from "../shared/messages.js";
-import { isRelayClientWebSocketUrl } from "../shared/daemon-endpoints.js";
 import {
   asUint8Array,
   decodeTerminalSnapshotPayload,
@@ -83,7 +82,6 @@ import {
   type TerminalStreamFrame,
 } from "../shared/terminal-stream-protocol.js";
 import {
-  createRelayE2eeTransportFactory,
   createWebSocketTransportFactory,
   decodeMessageData,
   defaultWebSocketFactory,
@@ -183,10 +181,6 @@ export type DaemonClientConfig = {
   webSocketFactory?: WebSocketFactory;
   logger?: Logger;
   connectTimeoutMs?: number;
-  e2ee?: {
-    enabled?: boolean;
-    daemonPublicKeyB64?: string;
-  };
   reconnect?: {
     enabled?: boolean;
     baseDelayMs?: number;
@@ -628,7 +622,7 @@ export class DaemonClient {
   private readonly terminalStreamListeners = new Set<(event: TerminalStreamEvent) => void>();
   private logger: Logger;
   private pendingSendQueue: PendingSend[] = [];
-  private readonly logConnectionPath: "direct" | "relay";
+  private readonly logConnectionPath: "direct";
   private readonly logServerId: string | null;
   private readonly logClientIdHash: string;
   private readonly logGeneration: number | null;
@@ -636,7 +630,7 @@ export class DaemonClient {
 
   constructor(private config: DaemonClientConfig) {
     this.logger = config.logger ?? consoleLogger;
-    this.logConnectionPath = isRelayClientWebSocketUrl(this.config.url) ? "relay" : "direct";
+    this.logConnectionPath = "direct";
     let parsedUrlForLog: URL | null = null;
     try {
       parsedUrlForLog = new URL(this.config.url);
@@ -706,24 +700,9 @@ export class DaemonClient {
       // Reconnect can overlap with browser close/error delivery ordering.
       // Always dispose previous transport before constructing the next one.
       this.disposeTransport();
-      const baseTransportFactory =
+      const transportFactory =
         this.config.transportFactory ??
         createWebSocketTransportFactory(this.config.webSocketFactory ?? defaultWebSocketFactory);
-      const shouldUseRelayE2ee =
-        this.config.e2ee?.enabled === true && isRelayClientWebSocketUrl(this.config.url);
-
-      let transportFactory = baseTransportFactory;
-      if (shouldUseRelayE2ee) {
-        const daemonPublicKeyB64 = this.config.e2ee?.daemonPublicKeyB64;
-        if (!daemonPublicKeyB64) {
-          throw new Error("daemonPublicKeyB64 is required for relay E2EE");
-        }
-        transportFactory = createRelayE2eeTransportFactory({
-          baseFactory: baseTransportFactory,
-          daemonPublicKeyB64,
-          logger: this.logger,
-        });
-      }
       const transportUrl = this.resolveTransportUrlForAttempt();
       const transport = transportFactory({ url: transportUrl, headers });
       this.transport = transport;
