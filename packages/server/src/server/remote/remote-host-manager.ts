@@ -13,7 +13,6 @@ export interface RemoteHostManagerConfig {
   logger: Logger;
   localVersion: string;
   getBinary?: (target: string) => Promise<Buffer>;
-  getBundle?: () => Promise<Buffer>;
   scanIntervalMs?: number;
 }
 
@@ -30,7 +29,6 @@ export class RemoteHostManager extends EventEmitter {
   private readonly logger: Logger;
   private readonly localVersion: string;
   private readonly getBinary: (target: string) => Promise<Buffer>;
-  private readonly getBundle?: () => Promise<Buffer>;
   private readonly scanIntervalMs: number;
   private readonly hosts = new Map<string, RemoteHostState>();
   private nextGeneration = 0;
@@ -47,7 +45,6 @@ export class RemoteHostManager extends EventEmitter {
       (() => {
         throw new Error("No binary provider configured");
       });
-    this.getBundle = config.getBundle;
     this.scanIntervalMs = config.scanIntervalMs ?? SCAN_INTERVAL_MS;
   }
 
@@ -184,7 +181,6 @@ export class RemoteHostManager extends EventEmitter {
         ssh,
         localVersion: this.localVersion,
         getBinary: this.getBinary,
-        getBundle: this.getBundle,
         logger: this.logger.child({ hostAlias: alias }),
       });
 

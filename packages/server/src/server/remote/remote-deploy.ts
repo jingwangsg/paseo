@@ -3,10 +3,9 @@ import type { SshClient } from "./ssh-client.js";
 
 export const REMOTE_DAEMON_PORT = 6767;
 const REMOTE_BIN_PATH = "~/.paseo/bin/paseo-daemon";
-const REMOTE_BUNDLE_PATH = "~/.paseo/bin/daemon.cjs";
 const REMOTE_PID_PATH = "~/.paseo/paseo.pid";
-const POLL_INTERVAL_MS = 1000;
-const POLL_MAX_ATTEMPTS = 30;
+const POLL_INTERVAL_MS = 500;
+const POLL_MAX_ATTEMPTS = 20;
 
 /** Extract numeric PID from the JSON PID lock file ({"pid":12345,...}).
  *  Uses sed to parse — avoids requiring jq on remote hosts. */
@@ -30,10 +29,6 @@ export function remoteStartCommand(): string {
   return `${REMOTE_BIN_PATH} --daemon --no-host-scan --listen 127.0.0.1:${REMOTE_DAEMON_PORT}`;
 }
 
-export function remoteBundleStartCommand(nodePath: string): string {
-  return `${nodePath} ${REMOTE_BUNDLE_PATH} --daemon --no-host-scan --listen 127.0.0.1:${REMOTE_DAEMON_PORT}`;
-}
-
 export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
   try {
     const output = await ssh.execChecked(`${REMOTE_BIN_PATH} --version`);
@@ -45,10 +40,9 @@ export async function getRemoteVersion(ssh: SshClient): Promise<string | null> {
 
 export async function isRemoteDaemonRunning(ssh: SshClient): Promise<boolean> {
   try {
-    // Verify both PID liveness AND process name to avoid false positives from PID reuse.
-    // Match both SEA binary (paseo-daemon) and JS bundle (daemon.cjs) process names.
+    // Verify both PID liveness AND process name to avoid false positives from PID reuse
     const result = await ssh.exec(
-      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -qE "paseo-daemon|daemon\\.cjs"`,
+      `pid=$(${EXTRACT_PID_CMD}) && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon`,
     );
     return result.exitCode === 0;
   } catch {
@@ -60,8 +54,8 @@ export function buildKillScript(): string {
   return [
     `pid=$(${EXTRACT_PID_CMD})`,
     `if [ -n "$pid" ]; then`,
-    // Verify the process is actually a paseo daemon (SEA or bundle) before killing
-    `  if ps -p "$pid" -o args= 2>/dev/null | grep -qE "paseo-daemon|daemon\\.cjs"; then`,
+    // Verify the process is actually a paseo daemon before killing
+    `  if ps -p "$pid" -o args= 2>/dev/null | grep -q paseo-daemon; then`,
     `    kill "$pid" 2>/dev/null`,
     `    for i in 1 2 3; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done`,
     `  fi`,
@@ -88,18 +82,17 @@ export async function startRemoteDaemon(ssh: SshClient, logger: Logger): Promise
   logger.info("Remote daemon start command issued");
 }
 
-// Prefer bash /dev/tcp (most reliable in SSH sessions), then nc, then python3
-const PORT_CHECK_CMD = `(echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null || nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null`;
-
 export async function waitForRemoteDaemon(ssh: SshClient, logger: Logger): Promise<boolean> {
   for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
-    // Check if the port is listening — this is the definitive readiness check.
-    // PID file may not exist yet (especially for bundle-mode starts), so we
-    // accept port-only as sufficient.
-    const portCheck = await ssh.exec(PORT_CHECK_CMD);
-    if (portCheck.exitCode === 0) {
-      logger.info("Remote daemon is ready");
-      return true;
+    const running = await isRemoteDaemonRunning(ssh);
+    if (running) {
+      const portCheck = await ssh.exec(
+        `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
+      );
+      if (portCheck.exitCode === 0) {
+        logger.info("Remote daemon is ready");
+        return true;
+      }
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -113,34 +106,13 @@ export interface DeployResult {
   error?: string;
 }
 
-async function findRemoteNode(ssh: SshClient): Promise<string | null> {
-  // Check common node locations — resolve to absolute paths to avoid
-  // shell variable expansion issues in nohup contexts.
-  const candidates = [
-    "which node 2>/dev/null",
-    'eval echo "$HOME/.local/bin/node"',
-    "echo /usr/local/bin/node",
-  ];
-  for (const resolveCmd of candidates) {
-    const resolved = await ssh.exec(resolveCmd);
-    const nodePath = resolved.stdout.trim();
-    if (!nodePath) continue;
-    const result = await ssh.exec(`${nodePath} --version 2>/dev/null`);
-    if (result.exitCode === 0 && result.stdout.trim().startsWith("v")) {
-      return nodePath;
-    }
-  }
-  return null;
-}
-
 export async function ensureRemoteDaemon(options: {
   ssh: SshClient;
   localVersion: string;
   getBinary: (target: string) => Promise<Buffer>;
-  getBundle?: () => Promise<Buffer>;
   logger: Logger;
 }): Promise<DeployResult> {
-  const { ssh, localVersion, getBinary, getBundle, logger } = options;
+  const { ssh, localVersion, getBinary, logger } = options;
 
   const uname = await ssh.detectRemoteArch();
   const target = mapUnameToTarget(uname);
@@ -164,70 +136,29 @@ export async function ensureRemoteDaemon(options: {
   // If no SEA binary but a daemon is already listening on the port (e.g., started
   // manually via tsx), skip deployment and treat it as ready.
   if (!remoteVersion) {
-    const portCheck = await ssh.exec(PORT_CHECK_CMD);
+    const portCheck = await ssh.exec(
+      `nc -z 127.0.0.1 ${REMOTE_DAEMON_PORT} 2>/dev/null || python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',${REMOTE_DAEMON_PORT})); s.close()" 2>/dev/null || (echo > /dev/tcp/127.0.0.1/${REMOTE_DAEMON_PORT}) 2>/dev/null`,
+    );
     if (portCheck.exitCode === 0) {
       logger.info("Remote daemon already listening (no SEA binary, likely dev mode)");
       return { success: true, version: "dev" };
     }
   }
 
+  const binary = await getBinary(target);
+
   if (remoteVersion) {
     await killRemoteDaemon(ssh, logger);
   }
 
-  // Try SEA binary first
-  try {
-    const binary = await getBinary(target);
-    await uploadBinary(ssh, binary, logger);
-    await startRemoteDaemon(ssh, logger);
-    const ready = await waitForRemoteDaemon(ssh, logger);
-    if (ready) {
-      const newVersion = await getRemoteVersion(ssh);
-      return { success: true, version: newVersion };
-    }
-    logger.warn("SEA binary failed to start, trying JS bundle fallback");
-  } catch (err) {
-    logger.warn({ err }, "SEA binary not available, trying JS bundle fallback");
-  }
-
-  // Fallback: JS bundle + node runtime
-  if (!getBundle) {
-    return {
-      success: false,
-      version: null,
-      error: "No SEA binary and no bundle provider configured",
-    };
-  }
-
-  const nodePath = await findRemoteNode(ssh);
-  if (!nodePath) {
-    return {
-      success: false,
-      version: null,
-      error:
-        "Remote daemon failed to start (SEA binary crashed and no Node.js found on remote host)",
-    };
-  }
-
-  logger.info({ nodePath }, "Found Node.js on remote, deploying JS bundle");
-
-  // Kill any leftover daemon and clean stale PID file before starting fresh
-  await ssh.exec(buildKillScript());
-  await ssh.exec(`pkill -f "daemon\\.cjs" 2>/dev/null; rm -f ${REMOTE_PID_PATH}`);
-
-  const bundle = await getBundle();
-  await ssh.execChecked("mkdir -p ~/.paseo/bin");
-  await ssh.upload(bundle, REMOTE_BUNDLE_PATH);
-  logger.info({ size: bundle.length }, "Uploaded remote daemon bundle");
-
-  const cmd = remoteBundleStartCommand(nodePath);
-  await ssh.exec(`nohup ${cmd} > /dev/null 2>&1 &`);
-  logger.info("Remote daemon (bundle) start command issued");
-
+  await uploadBinary(ssh, binary, logger);
+  await startRemoteDaemon(ssh, logger);
   const ready = await waitForRemoteDaemon(ssh, logger);
+
   if (!ready) {
-    return { success: false, version: null, error: "Remote daemon (JS bundle) failed to start" };
+    return { success: false, version: null, error: "Remote daemon failed to start" };
   }
 
-  return { success: true, version: localVersion };
+  const newVersion = await getRemoteVersion(ssh);
+  return { success: true, version: newVersion };
 }

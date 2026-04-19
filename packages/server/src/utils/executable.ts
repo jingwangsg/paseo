@@ -1,12 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { extname } from "node:path";
-
-type Which = (command: string, options: { all: true }) => Promise<string[]>;
-
-const require = createRequire(import.meta.url);
-const which = require("which") as Which;
+// @ts-expect-error — `which` has no type declarations in this project
+import which from "which";
 const PROBE_TIMEOUT_MS = 2000;
 
 function hasPathSeparator(value: string): boolean {
