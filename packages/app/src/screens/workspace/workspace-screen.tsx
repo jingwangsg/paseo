@@ -57,7 +57,10 @@ import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
-import { isAbsolutePath } from "@/utils/path";
+import {
+  canUseWorkspaceFilesystemFeatures,
+  getCopyableWorkspacePath,
+} from "@/utils/workspace-execution";
 import { normalizeWorkspaceIdentity } from "@/utils/workspace-identity";
 import {
   normalizeWorkspaceTabTarget,
@@ -647,7 +650,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
     enabled:
       Boolean(client && isConnected) &&
       normalizedWorkspaceId.length > 0 &&
-      isAbsolutePath(normalizedWorkspaceId),
+      canUseWorkspaceFilesystemFeatures(normalizedWorkspaceId),
     queryFn: async () => {
       if (!client) {
         throw new Error("Host is not connected");
@@ -722,7 +725,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
   const { archiveAgent } = useArchiveAgent();
 
   useEffect(() => {
-    if (!client || !isConnected || !isAbsolutePath(normalizedWorkspaceId)) {
+    if (!client || !isConnected || !canUseWorkspaceFilesystemFeatures(normalizedWorkspaceId)) {
       return;
     }
 
@@ -752,7 +755,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
   const isCheckoutQueryEnabled =
     Boolean(client && isConnected) &&
     normalizedWorkspaceId.length > 0 &&
-    isAbsolutePath(normalizedWorkspaceId);
+    canUseWorkspaceFilesystemFeatures(normalizedWorkspaceId);
   const checkoutQuery = useQuery({
     queryKey: checkoutStatusQueryKey(normalizedServerId, normalizedWorkspaceId),
     enabled: isCheckoutQueryEnabled,
@@ -766,6 +769,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
   });
   const isCheckoutStatusLoading =
     isCheckoutQueryEnabled && checkoutQuery.data === undefined && !checkoutQuery.isError;
+  const copyableWorkspacePath = getCopyableWorkspacePath(normalizedWorkspaceId);
 
   const workspaceDescriptor = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.workspaces.get(normalizedWorkspaceId) ?? null,
@@ -806,7 +810,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
   const isExplorerOpen = isMobile ? mobileView === "file-explorer" : desktopFileExplorerOpen;
 
   const activeExplorerCheckout = useMemo<ExplorerCheckoutContext | null>(() => {
-    if (!normalizedServerId || !isAbsolutePath(normalizedWorkspaceId)) {
+    if (!normalizedServerId || !canUseWorkspaceFilesystemFeatures(normalizedWorkspaceId)) {
       return null;
     }
     return {
@@ -1194,7 +1198,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
       if (createTerminalMutation.isPending) {
         return;
       }
-      if (!isAbsolutePath(normalizedWorkspaceId)) {
+      if (!canUseWorkspaceFilesystemFeatures(normalizedWorkspaceId)) {
         return;
       }
       createTerminalMutation.mutate(input);
@@ -1423,18 +1427,18 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
   );
 
   const handleCopyWorkspacePath = useCallback(async () => {
-    if (!isAbsolutePath(normalizedWorkspaceId)) {
+    if (!copyableWorkspacePath) {
       toast.error("Workspace path not available");
       return;
     }
 
     try {
-      await Clipboard.setStringAsync(normalizedWorkspaceId);
+      await Clipboard.setStringAsync(copyableWorkspacePath);
       toast.copied("Workspace path");
     } catch {
       toast.error("Copy failed");
     }
-  }, [normalizedWorkspaceId, toast]);
+  }, [copyableWorkspacePath, toast]);
 
   const handleCopyBranchName = useCallback(async () => {
     if (!currentBranchName) {
@@ -2054,7 +2058,7 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
                         <DropdownMenuItem
                           testID="workspace-header-copy-path"
                           leading={<Copy size={16} color={theme.colors.foregroundMuted} />}
-                          disabled={!isAbsolutePath(normalizedWorkspaceId)}
+                          disabled={!copyableWorkspacePath}
                           onSelect={handleCopyWorkspacePath}
                         >
                           Copy workspace path

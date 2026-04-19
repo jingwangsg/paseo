@@ -78,6 +78,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import { getCopyableWorkspacePath } from "@/utils/workspace-execution";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import { type PrHint, useWorkspacePrHint } from "@/hooks/use-checkout-pr-status-query";
@@ -1223,7 +1224,13 @@ function WorkspaceRowWithMenu({
   ]);
 
   const handleCopyPath = useCallback(() => {
-    void Clipboard.setStringAsync(workspace.workspaceId);
+    const copyablePath = getCopyableWorkspacePath(workspace.workspaceId);
+    if (!copyablePath) {
+      toast.error("Path not available");
+      return;
+    }
+
+    void Clipboard.setStringAsync(copyablePath);
     toast.copied("Path copied");
   }, [toast, workspace.workspaceId]);
 
