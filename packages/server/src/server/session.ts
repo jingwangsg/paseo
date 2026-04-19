@@ -8586,6 +8586,21 @@ export class Session {
   }
 
   private async handleSubscribeTerminalRequest(msg: SubscribeTerminalRequest): Promise<void> {
+    if (isRemoteAgentId(msg.terminalId)) {
+      const forwarded = this.forwardToRemoteTerminal(msg.terminalId, { ...msg });
+      if (!forwarded) {
+        this.emit({
+          type: "subscribe_terminal_response",
+          payload: {
+            terminalId: msg.terminalId,
+            error: "Remote host is not connected",
+            requestId: msg.requestId,
+          },
+        });
+      }
+      return;
+    }
+
     if (!this.terminalManager) {
       this.emit({
         type: "subscribe_terminal_response",
@@ -8649,10 +8664,20 @@ export class Session {
   }
 
   private handleUnsubscribeTerminalRequest(msg: UnsubscribeTerminalRequest): void {
+    if (isRemoteAgentId(msg.terminalId)) {
+      this.forwardToRemoteTerminal(msg.terminalId, { ...msg });
+      return;
+    }
+
     this.detachTerminalStream(msg.terminalId, { emitExit: false });
   }
 
   private handleTerminalInput(msg: TerminalInput): void {
+    if (isRemoteAgentId(msg.terminalId)) {
+      this.forwardToRemoteTerminal(msg.terminalId, { ...msg });
+      return;
+    }
+
     if (!this.terminalManager) {
       return;
     }
@@ -8693,6 +8718,21 @@ export class Session {
   }
 
   private async handleKillTerminalRequest(msg: KillTerminalRequest): Promise<void> {
+    if (isRemoteAgentId(msg.terminalId)) {
+      const forwarded = this.forwardToRemoteTerminal(msg.terminalId, { ...msg });
+      if (!forwarded) {
+        this.emit({
+          type: "kill_terminal_response",
+          payload: {
+            terminalId: msg.terminalId,
+            success: false,
+            requestId: msg.requestId,
+          },
+        });
+      }
+      return;
+    }
+
     const result = this.killTerminalForClose(msg.terminalId);
     this.emit({
       type: "kill_terminal_response",
@@ -8720,6 +8760,22 @@ export class Session {
   }
 
   private async handleCaptureTerminalRequest(msg: CaptureTerminalRequest): Promise<void> {
+    if (isRemoteAgentId(msg.terminalId)) {
+      const forwarded = this.forwardToRemoteTerminal(msg.terminalId, { ...msg });
+      if (!forwarded) {
+        this.emit({
+          type: "capture_terminal_response",
+          payload: {
+            terminalId: msg.terminalId,
+            lines: [],
+            totalLines: 0,
+            requestId: msg.requestId,
+          },
+        });
+      }
+      return;
+    }
+
     if (!this.terminalManager) {
       this.emit({
         type: "capture_terminal_response",
