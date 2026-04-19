@@ -73,14 +73,19 @@ export async function reconcileRemoteWorkspaces(options: {
   }
 }
 
-interface RemoteDaemonApi {
+export interface RemoteDaemonApi {
   fetchAll(): Promise<{
     projects: PersistedProjectRecord[];
     workspaces: PersistedWorkspaceRecord[];
   }>;
+  openProject(cwd: string): Promise<{
+    workspace: PersistedWorkspaceRecord;
+    project: PersistedProjectRecord;
+    error: null;
+  }>;
 }
 
-function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
+export function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
   const baseUrl = `http://127.0.0.1:${tunnelPort}`;
 
   return {
@@ -92,6 +97,18 @@ function createRemoteDaemonApi(tunnelPort: number): RemoteDaemonApi {
         projects: data.projects ?? [],
         workspaces: data.workspaces ?? [],
       };
+    },
+    async openProject(cwd: string) {
+      const res = await fetch(`${baseUrl}/api/open-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Remote API error: ${res.status}`);
+      }
+      return res.json();
     },
   };
 }

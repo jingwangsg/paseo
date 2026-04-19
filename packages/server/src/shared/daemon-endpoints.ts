@@ -97,4 +97,3 @@ export function extractHostPortFromWebSocketUrl(wsUrl: string): string {
   const isIpv6 = host.includes(":") && !host.startsWith("[") && !host.endsWith("]");
   return isIpv6 ? `[${host}]:${port}` : `${host}:${port}`;
 }
-
