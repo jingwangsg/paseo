@@ -58,7 +58,6 @@ type DesktopDaemonLogs = {
 };
 
 type DesktopPairingOffer = {
-  relayEnabled: boolean;
   url: string | null;
   qr: string | null;
 };
@@ -371,7 +370,6 @@ async function getDaemonPairing(): Promise<DesktopPairingOffer> {
   const status = await resolveStatus();
   if (status.status !== "running") {
     return {
-      relayEnabled: false,
       url: null,
       qr: null,
     };
@@ -384,13 +382,11 @@ async function getDaemonPairing(): Promise<DesktopPairingOffer> {
     }
 
     return {
-      relayEnabled: payload.relayEnabled === true,
       url: toTrimmedString(payload.url),
       qr: toTrimmedString(payload.qr),
     };
   } catch {
     return {
-      relayEnabled: false,
       url: null,
       qr: null,
     };
