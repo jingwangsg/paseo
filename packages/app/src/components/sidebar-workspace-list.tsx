@@ -1894,6 +1894,24 @@ export function SidebarWorkspaceList({
     return groupProjectsByHost(projects, remoteHosts);
   }, [hasRemoteHosts, projects, remoteHosts]);
 
+  const toast = useToast();
+
+  const handleRetryHost = useCallback(
+    (hostAlias: string) => {
+      if (!serverId) return;
+      const client = getHostRuntimeStore().getClient(serverId);
+      if (!client || !isHostRuntimeConnected(getHostRuntimeStore().getSnapshot(serverId))) {
+        toast.error("Host is not connected");
+        return;
+      }
+      void client.retryRemoteHost({ hostAlias }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        toast.error(`Retry failed: ${message}`);
+      });
+    },
+    [serverId, toast],
+  );
+
   const content = (
     <>
       {projects.length === 0 ? (
@@ -1911,6 +1929,8 @@ export function SidebarWorkspaceList({
               hostAlias={group.hostAlias}
               status={group.status}
               projectCount={group.projects.length}
+              error={group.hostAlias ? remoteHosts.get(group.hostAlias)?.error : undefined}
+              onRetry={group.hostAlias ? () => handleRetryHost(group.hostAlias!) : undefined}
             />
             {group.projects.length > 0 ? (
               <DraggableList
