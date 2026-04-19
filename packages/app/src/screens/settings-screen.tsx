@@ -42,6 +42,7 @@ import {
 import { AddHostMethodModal } from "@/components/add-host-method-modal";
 import { AddHostModal } from "@/components/add-host-modal";
 import { PairLinkModal } from "@/components/pair-link-modal";
+import { AddSshHostModal } from "@/components/add-ssh-host-modal";
 import { KeyboardShortcutsSection } from "@/screens/settings/keyboard-shortcuts-section";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -226,6 +227,9 @@ interface HostsSectionProps {
     intervalMs?: number,
   ) => Promise<boolean>;
   isMountedRef: MutableRefObject<boolean>;
+  isSshHostVisible: boolean;
+  setIsSshHostVisible: (visible: boolean) => void;
+  isDesktopApp: boolean;
 }
 
 function HostsSection(props: HostsSectionProps) {
@@ -284,6 +288,11 @@ function HostsSection(props: HostsSectionProps) {
             params: { source: "settings", sourceServerId },
           });
         }}
+        onSshHost={() => {
+          props.setIsAddHostMethodVisible(false);
+          props.setIsSshHostVisible(true);
+        }}
+        isDesktopApp={props.isDesktopApp}
       />
 
       <AddHostModal
@@ -296,6 +305,13 @@ function HostsSection(props: HostsSectionProps) {
         visible={props.isPasteLinkVisible}
         onClose={props.closeAddConnectionFlow}
         onCancel={props.goBackToAddConnectionMethods}
+      />
+
+      <AddSshHostModal
+        visible={props.isSshHostVisible}
+        onClose={props.closeAddConnectionFlow}
+        onCancel={props.goBackToAddConnectionMethods}
+        serverId={props.routeServerId}
       />
 
       {props.pendingRemoveHost ? (
@@ -949,6 +965,7 @@ export default function SettingsScreen() {
   const [isAddHostMethodVisible, setIsAddHostMethodVisible] = useState(false);
   const [isDirectHostVisible, setIsDirectHostVisible] = useState(false);
   const [isPasteLinkVisible, setIsPasteLinkVisible] = useState(false);
+  const [isSshHostVisible, setIsSshHostVisible] = useState(false);
   const [pendingRemoveHost, setPendingRemoveHost] = useState<HostProfile | null>(null);
   const [isRemovingHost, setIsRemovingHost] = useState(false);
   const [editingDaemon, setEditingDaemon] = useState<HostProfile | null>(null);
@@ -1010,11 +1027,13 @@ export default function SettingsScreen() {
     setIsAddHostMethodVisible(false);
     setIsDirectHostVisible(false);
     setIsPasteLinkVisible(false);
+    setIsSshHostVisible(false);
   }, []);
 
   const goBackToAddConnectionMethods = useCallback(() => {
     setIsDirectHostVisible(false);
     setIsPasteLinkVisible(false);
+    setIsSshHostVisible(false);
     setIsAddHostMethodVisible(true);
   }, []);
 
@@ -1140,6 +1159,9 @@ export default function SettingsScreen() {
       "This will restart the daemon. The app will reconnect automatically.",
     waitForCondition,
     isMountedRef,
+    isSshHostVisible,
+    setIsSshHostVisible,
+    isDesktopApp,
   };
 
   const generalProps: GeneralSectionProps = {
