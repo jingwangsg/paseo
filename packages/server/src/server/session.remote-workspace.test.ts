@@ -1109,6 +1109,105 @@ describe("remote ssh workspace routing", () => {
     expect(emitted).toHaveLength(1);
   });
 
+  test("rejects same-host request id reuse while the tombstone is still active", async () => {
+    vi.useFakeTimers();
+    try {
+      const issueRemoteProxyToken = vi.fn();
+      const { session, emitted } = createSessionForRemoteWorkspaceTests({
+        downloadTokenStore: { issueRemoteProxyToken },
+      });
+      const sendSessionMessage = vi.fn();
+      let onSessionMessage: ((msg: Record<string, unknown>) => void) | null = null;
+
+      createRemoteAgentProxyMock.mockImplementation(async (options) => {
+        onSessionMessage = options.onSessionMessage;
+        return {
+          sendSessionMessage,
+          close: vi.fn(),
+          alive: true,
+          hostAlias: options.hostAlias,
+        };
+      });
+
+      const firstRequest = session.handleMessage({
+        type: "file_download_token_request",
+        cwd: SSH_CWD,
+        path: "download.txt",
+        requestId: "req-tombstone",
+      });
+
+      await vi.waitFor(() => {
+        expect(sendSessionMessage).toHaveBeenCalledTimes(1);
+        expect(sendSessionMessage).toHaveBeenCalledWith({
+          type: "file_download_token_request",
+          cwd: REMOTE_CWD,
+          path: "download.txt",
+          requestId: "req-tombstone",
+        });
+      });
+
+      await vi.advanceTimersByTimeAsync(15_001);
+      await firstRequest;
+
+      const secondRequest = session.handleMessage({
+        type: "file_download_token_request",
+        cwd: SSH_CWD,
+        path: "download.txt",
+        requestId: "req-tombstone",
+      });
+
+      await secondRequest;
+
+      onSessionMessage?.({
+        type: "file_download_token_response",
+        payload: {
+          cwd: REMOTE_CWD,
+          path: "download.txt",
+          token: "remote-token-late",
+          fileName: "download.txt",
+          mimeType: "text/plain",
+          size: 24,
+          error: null,
+          requestId: "req-tombstone",
+        },
+      });
+
+      expect(sendSessionMessage).toHaveBeenCalledTimes(1);
+      expect(issueRemoteProxyToken).not.toHaveBeenCalled();
+      expect(emitted).toEqual([
+        {
+          type: "file_download_token_response",
+          payload: {
+            cwd: SSH_CWD,
+            path: "download.txt",
+            token: null,
+            fileName: null,
+            mimeType: null,
+            size: null,
+            error: "Timed out waiting for remote file_download_token_response",
+            requestId: "req-tombstone",
+          },
+        },
+        {
+          type: "file_download_token_response",
+          payload: {
+            cwd: SSH_CWD,
+            path: "download.txt",
+            token: null,
+            fileName: null,
+            mimeType: null,
+            size: null,
+            error:
+              'A recent remote download token request for "osmo_9000" with requestId "req-tombstone" is still being suppressed',
+            requestId: "req-tombstone",
+          },
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("forwards checkout_status_request by ssh cwd and rewrites the response", async () => {
     const { session, emitted } = createSessionForRemoteWorkspaceTests();
     const sendSessionMessage = vi.fn();

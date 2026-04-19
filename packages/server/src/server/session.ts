@@ -7871,6 +7871,11 @@ export class Session {
   ): Promise<Record<string, unknown>> {
     this.pruneSuppressedRemoteDownloadTokenBridges();
     const bridgeKey = buildRemoteDownloadTokenBridgeKey(hostAlias, requestId);
+    if (this.suppressedRemoteDownloadTokenBridges.has(bridgeKey)) {
+      throw new Error(
+        `A recent remote download token request for "${hostAlias}" with requestId "${requestId}" is still being suppressed`,
+      );
+    }
     if (this.pendingRemoteDownloadTokenBridges.has(bridgeKey)) {
       throw new Error(
         `A remote download token request is already pending for "${hostAlias}" with requestId "${requestId}"`,
