@@ -6329,11 +6329,21 @@ export class Session {
 
   private async handleFetchAgent(agentIdOrIdentifier: string, requestId: string): Promise<void> {
     if (isRemoteAgentId(agentIdOrIdentifier)) {
-      this.forwardToRemoteAgent(agentIdOrIdentifier, {
+      const forwarded = this.forwardToRemoteAgent(agentIdOrIdentifier, {
         type: "fetch_agent_request",
         agentId: agentIdOrIdentifier,
         requestId,
       });
+      if (!forwarded) {
+        this.emit({
+          type: "rpc_error",
+          payload: {
+            requestId,
+            requestType: "fetch_agent_request",
+            error: "Remote host is not connected",
+          },
+        });
+      }
       return;
     }
 
@@ -6371,7 +6381,17 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "fetch_agent_timeline_request" }>,
   ): Promise<void> {
     if (isRemoteAgentId(msg.agentId)) {
-      this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      const forwarded = this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      if (!forwarded) {
+        this.emit({
+          type: "rpc_error",
+          payload: {
+            requestId: msg.requestId,
+            requestType: "fetch_agent_timeline_request",
+            error: "Remote host is not connected",
+          },
+        });
+      }
       return;
     }
 
@@ -6534,7 +6554,18 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "send_agent_message_request" }>,
   ): Promise<void> {
     if (isRemoteAgentId(msg.agentId)) {
-      this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      const forwarded = this.forwardToRemoteAgent(msg.agentId, { ...msg });
+      if (!forwarded) {
+        this.emit({
+          type: "send_agent_message_response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            accepted: false,
+            error: "Remote host is not connected",
+          },
+        });
+      }
       return;
     }
 
@@ -7512,19 +7543,20 @@ export class Session {
     return result;
   }
 
-  private forwardToRemoteAgent(agentId: string, msg: Record<string, unknown>): void {
+  private forwardToRemoteAgent(agentId: string, msg: Record<string, unknown>): boolean {
     const hostAlias = extractHostAliasFromAgentId(agentId);
-    if (!hostAlias) return;
+    if (!hostAlias) return false;
     const proxy = this.remoteAgentProxies.get(hostAlias);
     if (!proxy?.alive) {
       this.sessionLogger.warn({ agentId, hostAlias }, "Remote proxy not available");
-      return;
+      return false;
     }
     const remoteMsg = { ...msg };
     if (typeof remoteMsg.agentId === "string") {
       remoteMsg.agentId = rewriteLocalAgentId(hostAlias, remoteMsg.agentId);
     }
     proxy.sendSessionMessage(remoteMsg);
+    return true;
   }
 
   private forwardToRemoteTerminal(terminalId: string, msg: Record<string, unknown>): boolean {
