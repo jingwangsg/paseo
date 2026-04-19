@@ -109,9 +109,6 @@ import { ScheduleService } from "./schedule/service.js";
 import { DaemonConfigStore } from "./daemon-config-store.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { createTerminalManager, type TerminalManager } from "../terminal/terminal-manager.js";
-import { createConnectionOfferV2, encodeOfferToFragmentUrl } from "./connection-offer.js";
-import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
-import { startRelayTransport, type RelayTransportController } from "./relay-transport.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
 import type { AgentClient, AgentProvider } from "./agent/agent-sdk-types.js";
@@ -172,10 +169,6 @@ export type PaseoDaemonConfig = {
   mcpDebug: boolean;
   agentClients: Partial<Record<AgentProvider, AgentClient>>;
   agentStoragePath: string;
-  relayEnabled?: boolean;
-  relayEndpoint?: string;
-  relayPublicEndpoint?: string;
-  appBaseUrl?: string;
   openai?: PaseoOpenAIConfig;
   speech?: PaseoSpeechConfig;
   voiceLlmProvider?: AgentProvider | null;
@@ -216,9 +209,6 @@ export async function createPaseoDaemon(
 
   try {
     const serverId = getOrCreateServerId(config.paseoHome, { logger });
-    const daemonKeyPair = await loadOrCreateDaemonKeyPair(config.paseoHome, logger);
-    let relayTransport: RelayTransportController | null = null;
-
     const staticDir = config.staticDir;
     const downloadTokenTtlMs = config.downloadTokenTtlMs ?? 60000;
 
@@ -658,11 +648,6 @@ export async function createPaseoDaemon(
             daemonConfigStore.onFieldChange("mcp.injectIntoAgents", (value) => {
               agentManager.setMcpBaseUrl(value ? mcpBaseUrl : null);
             });
-            const relayEnabled = config.relayEnabled ?? true;
-            const relayEndpoint = config.relayEndpoint ?? "relay.paseo.sh:443";
-            const relayPublicEndpoint = config.relayPublicEndpoint ?? relayEndpoint;
-            const appBaseUrl = config.appBaseUrl ?? "https://app.paseo.sh";
-
             if (boundListenTarget.type === "tcp") {
               logger.info(
                 {
@@ -728,29 +713,6 @@ export async function createPaseoDaemon(
             remoteHostManager.startScanner();
             logger.info({ elapsed: elapsed() }, "Remote host scanner started");
 
-            if (relayEnabled) {
-              const offer = await createConnectionOfferV2({
-                serverId,
-                daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
-                relay: { endpoint: relayPublicEndpoint },
-              });
-
-              encodeOfferToFragmentUrl({ offer, appBaseUrl });
-
-              relayTransport?.stop().catch(() => undefined);
-              relayTransport = startRelayTransport({
-                logger,
-                attachSocket: (ws, metadata) => {
-                  if (!wsServer) {
-                    throw new Error("WebSocket server not initialized");
-                  }
-                  return wsServer.attachExternalSocket(ws, metadata);
-                },
-                relayEndpoint,
-                serverId,
-                daemonKeyPair: daemonKeyPair.keyPair,
-              });
-            }
           };
 
           logAndResolve().then(resolve, reject);
@@ -787,7 +749,6 @@ export async function createPaseoDaemon(
       terminalManager.killAll();
       speechService.stop();
       await scheduleService.stop().catch(() => undefined);
-      await relayTransport?.stop().catch(() => undefined);
       if (wsServer) {
         await wsServer.close();
       }
