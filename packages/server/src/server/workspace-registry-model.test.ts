@@ -103,4 +103,9 @@ describe("deriveWorkspaceId", () => {
       }),
     ).toBe(normalizeWorkspaceId("/tmp/repo/scratch"));
   });
+
+  test("normalizeWorkspaceId preserves ssh-namespaced workspace ids", () => {
+    const sshId = "ssh:osmo_9000:/mnt/data/project";
+    expect(normalizeWorkspaceId(sshId)).toBe(sshId);
+  });
 });

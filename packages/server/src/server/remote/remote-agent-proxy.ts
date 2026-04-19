@@ -44,6 +44,28 @@ export function extractHostAliasFromProjectId(projectId: string): string | null 
   return afterPrefix.slice(0, colonIndex);
 }
 
+/**
+ * Returns true if the value looks like an SSH-namespaced identifier
+ * (e.g. workspace ID, project ID, agent ID, or cwd that was accidentally
+ * prefixed with the `ssh:<alias>:` namespace).
+ */
+export function isSshNamespacedId(value: string): boolean {
+  return value.startsWith("ssh:");
+}
+
+/**
+ * Strips the `ssh:<alias>:` prefix from a mirrored identifier, returning the
+ * remote-local value. If the value does not carry the prefix, it is returned
+ * unchanged.
+ */
+export function stripSshNamespace(value: string): string {
+  if (!value.startsWith("ssh:")) return value;
+  const rest = value.slice(4);
+  const colonIdx = rest.indexOf(":");
+  if (colonIdx === -1) return value;
+  return rest.slice(colonIdx + 1);
+}
+
 // ---------------------------------------------------------------------------
 // RemoteAgentProxy — maintains a WS connection to a remote daemon and proxies
 // agent operations bidirectionally.

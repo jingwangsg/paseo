@@ -17,6 +17,12 @@ export function normalizeWorkspaceId(cwd: string): string {
   if (!trimmed) {
     return cwd;
   }
+  // SSH-namespaced workspace IDs (e.g. "ssh:host:ws:/remote/path") are
+  // already fully qualified — resolve() would corrupt them by prepending
+  // the local process CWD.
+  if (trimmed.startsWith("ssh:")) {
+    return trimmed;
+  }
   return resolve(trimmed);
 }
 

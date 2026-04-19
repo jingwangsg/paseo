@@ -34,6 +34,7 @@ import type {
 } from "./agent-sdk-types.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { getAgentProviderDefinition } from "./provider-manifest.js";
+import { isSshNamespacedId } from "../remote/remote-agent-proxy.js";
 
 export { AGENT_LIFECYCLE_STATUSES, type AgentLifecycleStatus };
 
@@ -2553,8 +2554,10 @@ export class AgentManager {
   private async normalizeConfig(config: AgentSessionConfig): Promise<AgentSessionConfig> {
     const normalized: AgentSessionConfig = { ...config };
 
-    // Always resolve cwd to absolute path for consistent history file lookup
-    if (normalized.cwd) {
+    // Resolve cwd to absolute path for consistent history file lookup.
+    // Skip local filesystem validation for SSH-namespaced paths — those
+    // refer to directories on a remote host, not the local machine.
+    if (normalized.cwd && !isSshNamespacedId(normalized.cwd)) {
       normalized.cwd = resolve(normalized.cwd);
       try {
         const cwdStats = await stat(normalized.cwd);
