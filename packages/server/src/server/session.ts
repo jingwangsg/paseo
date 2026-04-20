@@ -2800,7 +2800,9 @@ export class Session {
   private async handleCreateAgentRequest(
     msg: Extract<SessionInboundMessage, { type: "create_agent_request" }>,
   ): Promise<void> {
-    const hostAlias = msg.host;
+    const hostAlias =
+      msg.host ??
+      (isSshNamespacedId(msg.config.cwd) ? extractHostAliasFromAgentId(msg.config.cwd) : null);
     if (hostAlias && this.remoteHostManager) {
       await this.handleRemoteCreateAgent(hostAlias, msg);
       return;
@@ -3213,6 +3215,33 @@ export class Session {
   private async handleListProviderFeaturesRequest(
     msg: Extract<SessionInboundMessage, { type: "list_provider_features_request" }>,
   ): Promise<void> {
+    const draftCwd = msg.draftConfig.cwd;
+    const hostAlias = isSshNamespacedId(draftCwd) ? extractHostAliasFromAgentId(draftCwd) : null;
+    if (hostAlias) {
+      const proxy = await this.ensureRemoteProxy(hostAlias);
+      if (!proxy?.alive) {
+        this.emit({
+          type: "list_provider_features_response",
+          payload: {
+            provider: msg.draftConfig.provider,
+            error: "Remote host is not connected",
+            fetchedAt: new Date().toISOString(),
+            requestId: msg.requestId,
+          },
+        });
+        return;
+      }
+
+      proxy.sendSessionMessage({
+        ...msg,
+        draftConfig: {
+          ...msg.draftConfig,
+          cwd: stripSshNamespace(draftCwd),
+        },
+      });
+      return;
+    }
+
     const fetchedAt = new Date().toISOString();
     try {
       const sessionConfig = this.buildDraftAgentSessionConfig(msg.draftConfig);
@@ -8605,13 +8634,17 @@ export class Session {
     }
 
     try {
-      const { createRemoteDaemonApi } = await import("./remote/remote-sync.js");
+      const { createRemoteDaemonApi, mirrorWorkspaceId } = await import("./remote/remote-sync.js");
       const api = createRemoteDaemonApi(tunnelPort);
-      await api.openProject(msg.cwd);
+      const opened = await api.openProject(msg.cwd);
 
       this.emit({
         type: "open_remote_project_response",
-        payload: { requestId: msg.requestId, success: true },
+        payload: {
+          requestId: msg.requestId,
+          success: true,
+          workspaceId: mirrorWorkspaceId(msg.hostAlias, opened.workspace.workspaceId),
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -9360,7 +9393,8 @@ export class Session {
   }
 
   private async handleCreateTerminalRequest(msg: CreateTerminalRequest): Promise<void> {
-    const hostAlias = msg.host;
+    const hostAlias =
+      msg.host ?? (isSshNamespacedId(msg.cwd) ? extractHostAliasFromAgentId(msg.cwd) : null);
     if (hostAlias && this.remoteHostManager) {
       await this.handleRemoteCreateTerminal(hostAlias, msg);
       return;

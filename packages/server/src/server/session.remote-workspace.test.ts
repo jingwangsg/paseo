@@ -1456,6 +1456,32 @@ describe("remote ssh workspace routing", () => {
     ]);
   });
 
+  test("routes create terminal to the remote daemon when cwd is ssh namespaced and host is omitted", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "create_terminal_request",
+      cwd: SSH_CWD,
+      name: "shell",
+      requestId: "req-create-terminal-no-host",
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "create_terminal_request",
+      cwd: REMOTE_CWD,
+      name: "shell",
+      requestId: "req-create-terminal-no-host",
+    });
+  });
+
   test("preserves remote create agent establishment errors", async () => {
     const { session, emitted } = createSessionForRemoteWorkspaceTests();
 
@@ -1479,6 +1505,96 @@ describe("remote ssh workspace routing", () => {
           status: "agent_create_failed",
           requestId: "req-create-agent",
           error: 'Failed to connect to "osmo_9000": TLS broke',
+        },
+      },
+    ]);
+  });
+
+  test("routes create agent to the remote daemon when cwd is ssh namespaced and host is omitted", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "create_agent_request",
+      config: {
+        provider: "codex",
+        cwd: SSH_CWD,
+      },
+      labels: {},
+      requestId: "req-create-agent-no-host",
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "create_agent_request",
+      config: {
+        provider: "codex",
+        cwd: REMOTE_CWD,
+      },
+      labels: {},
+      requestId: "req-create-agent-no-host",
+    });
+  });
+
+  test("routes list_provider_features_request to the remote daemon when draft cwd is ssh namespaced", async () => {
+    const { session, emitted } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+    let onSessionMessage: ((msg: Record<string, unknown>) => void) | null = null;
+
+    createRemoteAgentProxyMock.mockImplementation(async (options) => {
+      onSessionMessage = options.onSessionMessage;
+      return {
+        sendSessionMessage,
+        close: vi.fn(),
+        alive: true,
+        hostAlias: options.hostAlias,
+      };
+    });
+
+    await session.handleMessage({
+      type: "list_provider_features_request",
+      draftConfig: {
+        provider: "codex",
+        cwd: SSH_CWD,
+      },
+      requestId: "req-features",
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "list_provider_features_request",
+      draftConfig: {
+        provider: "codex",
+        cwd: REMOTE_CWD,
+      },
+      requestId: "req-features",
+    });
+
+    onSessionMessage?.({
+      type: "list_provider_features_response",
+      payload: {
+        provider: "codex",
+        features: [],
+        error: null,
+        fetchedAt: "2026-04-20T00:00:00.000Z",
+        requestId: "req-features",
+      },
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "list_provider_features_response",
+        payload: {
+          provider: "codex",
+          features: [],
+          error: null,
+          fetchedAt: "2026-04-20T00:00:00.000Z",
+          requestId: "req-features",
         },
       },
     ]);

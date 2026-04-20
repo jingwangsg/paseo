@@ -2893,6 +2893,7 @@ const OpenRemoteProjectResponseSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     success: z.boolean(),
+    workspaceId: z.string().optional(),
     error: z.string().optional(),
   }),
 });

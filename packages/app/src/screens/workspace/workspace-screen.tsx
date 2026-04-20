@@ -60,6 +60,7 @@ import { decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
 import {
   canUseWorkspaceFilesystemFeatures,
   getCopyableWorkspacePath,
+  getSshWorkspaceHostAlias,
 } from "@/utils/workspace-execution";
 import { normalizeWorkspaceIdentity } from "@/utils/workspace-identity";
 import {
@@ -670,7 +671,10 @@ function WorkspaceScreenContent({ serverId, workspaceId }: WorkspaceScreenProps)
             .getState()
             .sessions[normalizedServerId]?.workspaces.get(normalizedWorkspaceId)?.executionHost
         : undefined;
-      const host = execHost?.kind === "ssh" ? execHost.hostAlias : undefined;
+      const host =
+        execHost?.kind === "ssh"
+          ? execHost.hostAlias
+          : (getSshWorkspaceHostAlias(normalizedWorkspaceId) ?? undefined);
       return await client.createTerminal(normalizedWorkspaceId, undefined, undefined, host);
     },
     onSuccess: (payload, input) => {

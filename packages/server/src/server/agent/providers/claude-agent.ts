@@ -2404,9 +2404,18 @@ class ClaudeAgentSession implements AgentSession {
       .join("\n\n");
 
     const claudeBinary = await findExecutable("claude");
+    let resolvedClaudeBinary = claudeBinary;
+    if (claudeBinary) {
+      try {
+        resolvedClaudeBinary = fs.realpathSync(claudeBinary);
+      } catch {
+        resolvedClaudeBinary = claudeBinary;
+      }
+    }
     this.logger.debug(
       {
         claudeBinary,
+        resolvedClaudeBinary,
         pathEnvKey:
           process.env["Path"] !== undefined
             ? "Path"
@@ -2448,6 +2457,7 @@ class ClaudeAgentSession implements AgentSession {
         MCP_TOOL_TIMEOUT: "600000",
         ...(this.launchEnv ?? {}),
       },
+      ...(resolvedClaudeBinary ? { pathToClaudeCodeExecutable: resolvedClaudeBinary } : {}),
       // Required for provider-level /rewind support.
       enableFileCheckpointing: true,
       // If we have a session ID from a previous query (e.g., after interrupt),

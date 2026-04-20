@@ -27,6 +27,20 @@ export function stripSshWorkspaceId(value: string): string {
   return normalized.slice(normalized.indexOf(":", 4) + 1);
 }
 
+export function getSshWorkspaceHostAlias(value: string): string | null {
+  const normalized = trimNonEmpty(value);
+  if (!normalized || !isSshWorkspaceId(normalized)) {
+    return null;
+  }
+
+  const separator = normalized.indexOf(":", 4);
+  if (separator <= 4) {
+    return null;
+  }
+
+  return normalized.slice(4, separator);
+}
+
 export function canUseWorkspaceFilesystemFeatures(value: string): boolean {
   return isAbsolutePath(value) || isSshWorkspaceId(value);
 }

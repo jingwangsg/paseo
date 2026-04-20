@@ -3,6 +3,7 @@ import { Text, TextInput, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { FolderPlus } from "lucide-react-native";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { navigateToWorkspace } from "@/hooks/use-workspace-navigation";
 import { AdaptiveModalSheet, AdaptiveTextInput } from "./adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 
@@ -98,13 +99,16 @@ export function OpenRemoteProjectModal({
       }
 
       handleClose();
+      if (typeof result.workspaceId === "string" && result.workspaceId.trim().length > 0) {
+        navigateToWorkspace(serverId, result.workspaceId);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setErrorMessage(`Failed to open remote project: ${message}`);
     } finally {
       setIsOpening(false);
     }
-  }, [cwdRaw, client, handleClose, hostAlias, isConnected, isOpening]);
+  }, [cwdRaw, client, handleClose, hostAlias, isConnected, isOpening, serverId]);
 
   return (
     <AdaptiveModalSheet

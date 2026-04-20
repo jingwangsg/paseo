@@ -56,6 +56,7 @@ import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { useAgentInputDraft } from "@/hooks/use-agent-input-draft";
 import { useDraftAgentCreateFlow } from "@/hooks/use-draft-agent-create-flow";
 import { useDraftAgentFeatures } from "@/hooks/use-draft-agent-features";
+import { getSshWorkspaceHostAlias } from "@/utils/workspace-execution";
 import { isWeb } from "@/constants/platform";
 
 const EMPTY_PENDING_PERMISSIONS = new Map();
@@ -939,7 +940,10 @@ function DraftAgentScreenContent({
         ? useSessionStore.getState().sessions[selectedServerId]?.workspaces.get(config.cwd)
             ?.executionHost
         : undefined;
-      const host = execHost?.kind === "ssh" ? execHost.hostAlias : undefined;
+      const host =
+        execHost?.kind === "ssh"
+          ? execHost.hostAlias
+          : (getSshWorkspaceHostAlias(config.cwd) ?? undefined);
       const result = await client.createAgent({
         config,
         initialPrompt: text,

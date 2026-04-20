@@ -13,6 +13,7 @@ import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import { encodeImages } from "@/utils/encode-images";
+import { getSshWorkspaceHostAlias } from "@/utils/workspace-execution";
 import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/workspace-draft-pane-focus";
 import type {
   AgentCapabilityFlags,
@@ -55,7 +56,10 @@ export function WorkspaceDraftAgentTab({
   const executionHost = useSessionStore(
     (state) => state.sessions[serverId]?.workspaces.get(workspaceId)?.executionHost,
   );
-  const host = executionHost?.kind === "ssh" ? executionHost.hostAlias : undefined;
+  const host =
+    executionHost?.kind === "ssh"
+      ? executionHost.hostAlias
+      : (getSshWorkspaceHostAlias(workspaceId) ?? undefined);
   const addImagesRef = useRef<((images: ImageAttachment[]) => void) | null>(null);
   const draftInput = useAgentInputDraft(
     buildDraftStoreKey({

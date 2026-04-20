@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canUseWorkspaceFilesystemFeatures,
   getCopyableWorkspacePath,
+  getSshWorkspaceHostAlias,
   isSshWorkspaceId,
   stripSshWorkspaceId,
 } from "./workspace-execution";
@@ -15,6 +16,7 @@ describe("workspace-execution", () => {
   it("strips the ssh transport prefix for copy-path behavior", () => {
     expect(stripSshWorkspaceId("ssh:osmo_9000:/mnt/data/repo")).toBe("/mnt/data/repo");
     expect(getCopyableWorkspacePath("ssh:osmo_9000:/mnt/data/repo")).toBe("/mnt/data/repo");
+    expect(getSshWorkspaceHostAlias("ssh:osmo_9000:/mnt/data/repo")).toBe("osmo_9000");
   });
 
   it("keeps local absolute paths unchanged", () => {
@@ -22,5 +24,6 @@ describe("workspace-execution", () => {
     expect(stripSshWorkspaceId("/tmp/repo")).toBe("/tmp/repo");
     expect(canUseWorkspaceFilesystemFeatures("/tmp/repo")).toBe(true);
     expect(getCopyableWorkspacePath("/tmp/repo")).toBe("/tmp/repo");
+    expect(getSshWorkspaceHostAlias("/tmp/repo")).toBeNull();
   });
 });
