@@ -833,6 +833,47 @@ describe("ClaudeAgentSession redesign invariants", () => {
     }
   });
 
+  test("disables dangerous skip permissions when running as root", async () => {
+    const capturedOptions: Array<{
+      permissionMode?: string;
+      allowDangerouslySkipPermissions?: boolean;
+    }> = [];
+    const getuidSpy =
+      typeof process.getuid === "function" ? vi.spyOn(process, "getuid").mockReturnValue(0) : null;
+
+    sdkQueryFactory.mockImplementation(
+      ({
+        options,
+      }: {
+        options: {
+          permissionMode?: string;
+          allowDangerouslySkipPermissions?: boolean;
+        };
+      }) => {
+        capturedOptions.push({
+          permissionMode: options.permissionMode,
+          allowDangerouslySkipPermissions: options.allowDangerouslySkipPermissions,
+        });
+
+        return createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
+      },
+    );
+
+    const session = await createSession();
+
+    try {
+      await collectUntilTerminal(streamSession(session, "root default prompt"));
+      expect(capturedOptions).toHaveLength(1);
+      expect(capturedOptions[0]).toMatchObject({
+        permissionMode: "default",
+        allowDangerouslySkipPermissions: false,
+      });
+    } finally {
+      getuidSpy?.mockRestore();
+      await session.close();
+    }
+  });
+
   test("plan approval exposes a resume-bypass action and can return to bypassPermissions", async () => {
     const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
     sdkQueryFactory.mockImplementation(() => queryMock);

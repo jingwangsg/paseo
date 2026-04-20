@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isCommandAvailable } from "../../utils/executable.js";
+import { isCommandAvailable, prependUserBinFallbacksToPath } from "../../utils/executable.js";
 import type { AgentProvider } from "./agent-sdk-types.js";
 import { AgentProviderSchema } from "./provider-manifest.js";
 
@@ -174,6 +174,17 @@ export function applyProviderEnv(
     ...baseEnv,
     ...(runtimeSettings?.env ?? {}),
   };
+  const pathKey =
+    merged["Path"] !== undefined ? "Path" : merged["PATH"] !== undefined ? "PATH" : undefined;
+  const augmentedPath = prependUserBinFallbacksToPath(
+    pathKey ? merged[pathKey] : undefined,
+    typeof merged.HOME === "string" ? { homeDir: merged.HOME } : {},
+  );
+  if (pathKey) {
+    merged[pathKey] = augmentedPath;
+  } else if (augmentedPath !== undefined) {
+    merged.PATH = augmentedPath;
+  }
   for (const key of PARENT_SESSION_ENV_VARS) {
     delete merged[key];
   }

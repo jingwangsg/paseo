@@ -82,6 +82,41 @@ export interface RemoteAgentProxy {
   readonly hostAlias: string;
 }
 
+export function parseRemoteProxyInboundMessage(
+  data: WebSocket.RawData,
+):
+  | { kind: "session"; message: Record<string, unknown> }
+  | { kind: "binary"; data: Uint8Array }
+  | { kind: "ignore" } {
+  if (Buffer.isBuffer(data)) {
+    const text = data.toString("utf8");
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.type === "session" && parsed.message) {
+        return { kind: "session", message: parsed.message };
+      }
+      return { kind: "ignore" };
+    } catch {
+      return { kind: "binary", data: new Uint8Array(data) };
+    }
+  }
+
+  if (typeof data !== "string") {
+    return { kind: "binary", data: new Uint8Array(data as ArrayBufferLike) };
+  }
+
+  const text = String(data);
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.type === "session" && parsed.message) {
+      return { kind: "session", message: parsed.message };
+    }
+    return { kind: "ignore" };
+  } catch {
+    return { kind: "binary", data: new Uint8Array(Buffer.from(text, "binary")) };
+  }
+}
+
 export async function createRemoteAgentProxy(options: {
   hostAlias: string;
   tunnelPort: number;
@@ -90,8 +125,10 @@ export async function createRemoteAgentProxy(options: {
   /** Handler for session messages from the remote daemon. Set at creation
    *  time so no messages are lost during the hello handshake. */
   onSessionMessage: (msg: Record<string, unknown>) => void;
+  onBinaryMessage?: (data: Uint8Array) => void;
 }): Promise<RemoteAgentProxy> {
-  const { hostAlias, tunnelPort, daemonVersion, logger, onSessionMessage } = options;
+  const { hostAlias, tunnelPort, daemonVersion, logger, onSessionMessage, onBinaryMessage } =
+    options;
   const url = `ws://127.0.0.1:${tunnelPort}/ws`;
 
   return new Promise((resolve, reject) => {
@@ -117,7 +154,14 @@ export async function createRemoteAgentProxy(options: {
 
     ws.on("message", (data) => {
       try {
-        const parsed = JSON.parse(data.toString());
+        const parsed = parseRemoteProxyInboundMessage(data);
+        if (parsed.kind === "binary") {
+          onBinaryMessage?.(parsed.data);
+          return;
+        }
+        if (parsed.kind === "ignore") {
+          return;
+        }
 
         // The first response after hello is the server_info/status message
         // confirming the session is established.
@@ -154,10 +198,7 @@ export async function createRemoteAgentProxy(options: {
           return;
         }
 
-        // Remote daemon wraps session messages in { type: "session", message: ... }
-        if (parsed.type === "session" && parsed.message) {
-          onSessionMessage(parsed.message);
-        }
+        onSessionMessage(parsed.message);
       } catch (err) {
         logger.warn({ err, hostAlias }, "Remote proxy failed to parse message");
       }

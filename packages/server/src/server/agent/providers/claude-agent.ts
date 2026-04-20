@@ -210,6 +210,10 @@ function resolveClaudeSpawnCommand(
   };
 }
 
+function canEnableClaudeDangerousSkipPermissions(): boolean {
+  return typeof process.getuid !== "function" || process.getuid() !== 0;
+}
+
 function applyRuntimeSettingsToClaudeOptions(
   options: ClaudeOptions,
   runtimeSettings?: ProviderRuntimeSettings,
@@ -2435,7 +2439,8 @@ class ClaudeAgentSession implements AgentSession {
       // Dynamic mode switching can recreate the underlying Claude query. Keep the
       // bypass launch capability available so later setPermissionMode("bypassPermissions")
       // calls do not fail after a model/thinking/rewind-driven restart.
-      allowDangerouslySkipPermissions: true,
+      // Claude Code rejects this flag outright under root, so disable it there.
+      allowDangerouslySkipPermissions: canEnableClaudeDangerousSkipPermissions(),
       agents: this.defaults?.agents,
       canUseTool: this.handlePermissionRequest,
       // Use Claude Code preset system prompt and load CLAUDE.md files

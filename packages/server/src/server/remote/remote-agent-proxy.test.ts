@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   rewriteRemoteAgentId,
   rewriteLocalAgentId,
@@ -8,6 +8,7 @@ import {
   extractHostAliasFromAgentId,
   buildRemoteDaemonWsUrl,
   extractHostAliasFromProjectId,
+  parseRemoteProxyInboundMessage,
 } from "./remote-agent-proxy.js";
 
 describe("remote-agent-proxy", () => {
@@ -67,5 +68,26 @@ describe("remote-agent-proxy", () => {
 
   test("stripSshNamespace returns original for malformed ssh prefix", () => {
     expect(stripSshNamespace("ssh:noColon")).toBe("ssh:noColon");
+  });
+
+  test("parseRemoteProxyInboundMessage unwraps session JSON messages", () => {
+    const parsed = parseRemoteProxyInboundMessage(
+      Buffer.from(JSON.stringify({ type: "session", message: { type: "pong" } })),
+    );
+
+    expect(parsed).toEqual({
+      kind: "session",
+      message: { type: "pong" },
+    });
+  });
+
+  test("parseRemoteProxyInboundMessage preserves binary terminal frames", () => {
+    const frame = new Uint8Array([1, 0, 27, 91, 63, 117]);
+    const parsed = parseRemoteProxyInboundMessage(frame);
+
+    expect(parsed).toEqual({
+      kind: "binary",
+      data: frame,
+    });
   });
 });

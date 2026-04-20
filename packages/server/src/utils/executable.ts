@@ -1,6 +1,7 @@
+import os from "node:os";
+import { delimiter, extname, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { extname } from "node:path";
 // @ts-expect-error — `which` has no type declarations in this project
 import which from "which";
 const PROBE_TIMEOUT_MS = 2000;
@@ -29,6 +30,52 @@ async function enumerateCandidates(name: string): Promise<string[]> {
     seen.add(candidate);
     return true;
   });
+}
+
+function enumerateUserBinFallbackDirs(
+  options: { homeDir?: string; platform?: NodeJS.Platform } = {},
+): string[] {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    return [];
+  }
+
+  const homeDir = options.homeDir ?? os.homedir();
+  if (!homeDir) {
+    return [];
+  }
+
+  return [join(homeDir, ".local", "bin"), join(homeDir, "bin")];
+}
+
+export function enumerateUserBinFallbackCandidates(
+  name: string,
+  options: {
+    homeDir?: string;
+    platform?: NodeJS.Platform;
+  } = {},
+): string[] {
+  return enumerateUserBinFallbackDirs(options).map((dir) => join(dir, name));
+}
+
+export function prependUserBinFallbacksToPath(
+  pathValue: string | undefined,
+  options: {
+    homeDir?: string;
+    platform?: NodeJS.Platform;
+  } = {},
+): string | undefined {
+  const fallbackDirs = enumerateUserBinFallbackDirs(options);
+  if (fallbackDirs.length === 0) {
+    return pathValue;
+  }
+
+  const existingEntries = (pathValue ?? "").split(delimiter).filter((entry) => entry.length > 0);
+  const seen = new Set(existingEntries);
+  const prefixEntries = fallbackDirs.filter((entry) => !seen.has(entry));
+  const combinedEntries = [...prefixEntries, ...existingEntries];
+
+  return combinedEntries.length > 0 ? combinedEntries.join(delimiter) : undefined;
 }
 
 export function isWindowsCommandScript(executablePath: string): boolean {
@@ -116,8 +163,16 @@ export async function findExecutable(name: string): Promise<string | null> {
     return (await probeExecutable(trimmed)) ? trimmed : null;
   }
 
-  const candidates = await enumerateCandidates(trimmed);
+  const candidates = [
+    ...(await enumerateCandidates(trimmed)),
+    ...enumerateUserBinFallbackCandidates(trimmed),
+  ];
+  const seen = new Set<string>();
   for (const candidate of candidates) {
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
     if (await probeExecutable(candidate)) {
       return candidate;
     }

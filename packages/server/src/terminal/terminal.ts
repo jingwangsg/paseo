@@ -1,14 +1,61 @@
 import xterm, { type Terminal as TerminalType } from "@xterm/headless";
 import { randomUUID } from "crypto";
-import { chmodSync, existsSync, statSync } from "node:fs";
+import { chmodSync, existsSync, statSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { ReadStream } from "node:tty";
+import { fileURLToPath } from "node:url";
 import stripAnsi from "strip-ansi";
 import type { TerminalCell, TerminalState } from "../shared/messages.js";
 
 const { Terminal } = xterm;
 const require = createRequire(import.meta.url);
 let nodePtySpawnHelperChecked = false;
+
+type PtyExitEvent = {
+  exitCode: number;
+  signal?: number;
+};
+
+type PtyProcessLike = {
+  onData(listener: (data: string) => void): { dispose(): void };
+  onExit(listener: (event: PtyExitEvent) => void): { dispose(): void };
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(signal?: NodeJS.Signals | string): void;
+};
+
+type PtyModuleLike = {
+  spawn(
+    file: string,
+    args: string[],
+    options: {
+      name?: string;
+      cols?: number;
+      rows?: number;
+      cwd?: string;
+      env?: Record<string, string | undefined>;
+      encoding?: BufferEncoding | null;
+    },
+  ): PtyProcessLike;
+};
+
+type BundledUnixPtyNativeModule = {
+  fork(
+    file: string,
+    args: string[],
+    env: string[],
+    cwd: string,
+    cols: number,
+    rows: number,
+    uid: number,
+    gid: number,
+    utf8: boolean,
+    helperPath: string,
+    onExit: (exitCode: number, signal: number) => void,
+  ): { fd: number; pid: number; pty: string };
+  resize(fd: number, cols: number, rows: number, pixelWidth: number, pixelHeight: number): void;
+};
 
 export type ClientMessage =
   | { type: "input"; data: string }
@@ -65,6 +112,181 @@ function resolveNodePtyPackageRoot(): string | null {
   } catch {
     return null;
   }
+}
+
+function isPtyModuleLike(value: unknown): value is PtyModuleLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as PtyModuleLike).spawn === "function"
+  );
+}
+
+function buildBundledPtyBaseDirs(): string[] {
+  const candidates = [
+    process.argv[1] ? dirname(process.argv[1]) : null,
+    dirname(fileURLToPath(import.meta.url)),
+    dirname(process.execPath),
+  ];
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    dirs.push(candidate);
+  }
+  return dirs;
+}
+
+export function resolveBundledPtyNativeModulePath(
+  options: {
+    baseDirs?: string[];
+    platform?: NodeJS.Platform;
+    arch?: string;
+    exists?: typeof existsSync;
+  } = {},
+): string | null {
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  const exists = options.exists ?? existsSync;
+  const baseDirs = options.baseDirs ?? buildBundledPtyBaseDirs();
+
+  for (const baseDir of baseDirs) {
+    const candidate = join(baseDir, "prebuilds", `${platform}-${arch}`, "pty.node");
+    if (exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function createBundledUnixPtyModule(): PtyModuleLike {
+  const nativeModulePath = resolveBundledPtyNativeModulePath();
+  if (!nativeModulePath) {
+    throw new Error("node-pty is not available in this environment (bundled pty.node missing)");
+  }
+
+  const nativeModule = require(nativeModulePath) as BundledUnixPtyNativeModule;
+  const nativeDir = dirname(nativeModulePath);
+
+  return {
+    spawn(file, args, options) {
+      const cwd = options.cwd ?? process.cwd();
+      const cols = options.cols ?? 80;
+      const rows = options.rows ?? 24;
+      const encoding = options.encoding === undefined ? "utf8" : options.encoding;
+      const env = { ...(options.env ?? {}) };
+      env.PWD = cwd;
+      env.TERM = options.name ?? env.TERM ?? "xterm";
+      const parsedEnv = Object.entries(env).map(([key, value]) => `${key}=${value ?? ""}`);
+      const helperPath = join(nativeDir, "spawn-helper");
+      const dataListeners = new Set<(data: string) => void>();
+      const exitListeners = new Set<(event: PtyExitEvent) => void>();
+
+      const term = nativeModule.fork(
+        file,
+        args,
+        parsedEnv,
+        cwd,
+        cols,
+        rows,
+        -1,
+        -1,
+        encoding === "utf8",
+        helperPath,
+        (exitCode, signal) => {
+          for (const listener of Array.from(exitListeners)) {
+            listener({ exitCode, signal });
+          }
+        },
+      );
+
+      const socket = new ReadStream(term.fd);
+      if (encoding !== null) {
+        socket.setEncoding(encoding);
+      }
+      socket.on("data", (data) => {
+        const text = typeof data === "string" ? data : data.toString(encoding ?? "utf8");
+        for (const listener of Array.from(dataListeners)) {
+          listener(text);
+        }
+      });
+      socket.on("error", (error) => {
+        const code = (error as NodeJS.ErrnoException).code ?? "";
+        if (code.includes("EAGAIN") || code.includes("EIO") || code.includes("errno 5")) {
+          return;
+        }
+        throw error;
+      });
+
+      return {
+        onData(listener) {
+          dataListeners.add(listener);
+          return {
+            dispose() {
+              dataListeners.delete(listener);
+            },
+          };
+        },
+        onExit(listener) {
+          exitListeners.add(listener);
+          return {
+            dispose() {
+              exitListeners.delete(listener);
+            },
+          };
+        },
+        write(data) {
+          if (data.length === 0) {
+            return;
+          }
+          writeSync(term.fd, data, undefined, encoding ?? "utf8");
+        },
+        resize(nextCols, nextRows) {
+          nativeModule.resize(term.fd, nextCols, nextRows, 0, 0);
+        },
+        kill(signal = "SIGHUP") {
+          socket.destroy();
+          try {
+            process.kill(term.pid, signal as NodeJS.Signals);
+          } catch {
+            // best effort
+          }
+        },
+      };
+    },
+  };
+}
+
+export async function loadNodePtyModuleForCurrentEnvironment(
+  options: {
+    platform?: NodeJS.Platform;
+    importNodePty?: () => Promise<unknown>;
+    createBundledUnixPtyModule?: () => PtyModuleLike;
+  } = {},
+): Promise<PtyModuleLike> {
+  const platform = options.platform ?? process.platform;
+  const importNodePty = options.importNodePty ?? (() => import("node-pty"));
+  try {
+    const loaded = await importNodePty();
+    if (isPtyModuleLike(loaded)) {
+      return loaded;
+    }
+  } catch (error) {
+    if (platform !== "win32") {
+      return (options.createBundledUnixPtyModule ?? createBundledUnixPtyModule)();
+    }
+    throw error;
+  }
+
+  if (platform !== "win32") {
+    return (options.createBundledUnixPtyModule ?? createBundledUnixPtyModule)();
+  }
+
+  throw new Error("node-pty is not available in this environment");
 }
 
 function ensureExecutableBit(path: string): void {
@@ -332,9 +554,10 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
 
   ensureNodePtySpawnHelperExecutableForCurrentPlatform();
 
-  // Lazy-load node-pty so the daemon can start without the native module
-  // (e.g. in SEA binaries deployed to remote hosts where terminals aren't needed at startup)
-  const pty = await import("node-pty");
+  // Lazy-load node-pty so the daemon can start without the native module.
+  // Bundled remote daemons fall back to a direct pty.node loader when the
+  // package wrapper is not present in the SEA/runtime environment.
+  const pty = await loadNodePtyModuleForCurrentEnvironment();
 
   // Create PTY
   const ptyProcess = pty.spawn(resolvedShell, [], {

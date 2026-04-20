@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { TerminalStreamOpcode } from "../shared/terminal-stream-protocol.js";
 
 const { createRemoteAgentProxyMock } = vi.hoisted(() => ({
   createRemoteAgentProxyMock: vi.fn(),
@@ -444,6 +445,7 @@ const REMOTE_UNAVAILABLE_CASES = [
 function createSessionForRemoteWorkspaceTests(overrides?: {
   downloadTokenStore?: Record<string, unknown>;
   tunnelPorts?: Record<string, number | null>;
+  onBinaryMessage?: (frame: Uint8Array) => void;
 }) {
   const emitted: Array<{ type: string; payload: unknown }> = [];
   const logger = {
@@ -466,6 +468,7 @@ function createSessionForRemoteWorkspaceTests(overrides?: {
     clientId: "test-client",
     appVersion: null,
     onMessage: (message) => emitted.push(message as any),
+    onBinaryMessage: overrides?.onBinaryMessage,
     logger: logger as any,
     downloadTokenStore: (overrides?.downloadTokenStore ?? {}) as any,
     pushTokenStore: {} as any,
@@ -1479,6 +1482,95 @@ describe("remote ssh workspace routing", () => {
       cwd: REMOTE_CWD,
       name: "shell",
       requestId: "req-create-terminal-no-host",
+    });
+  });
+
+  test("routes remote terminal binary input frames through the remote proxy", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests();
+    const sendSessionMessage = vi.fn();
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "list_terminals_request",
+      cwd: SSH_CWD,
+      requestId: "req-prime-remote-proxy",
+    });
+
+    session.activeTerminalStreams.set(7, {
+      terminalId: `ssh:${HOST_ALIAS}:term-1`,
+      slot: 7,
+      unsubscribe: vi.fn(),
+      needsSnapshot: false,
+    });
+
+    sendSessionMessage.mockClear();
+
+    session.handleBinaryFrame({
+      slot: 7,
+      opcode: TerminalStreamOpcode.Input,
+      payload: Buffer.from("echo remote\r"),
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "terminal_input",
+      terminalId: "term-1",
+      message: {
+        type: "input",
+        data: "echo remote\r",
+      },
+    });
+  });
+
+  test("binds mirrored remote terminal slots from subscribe_terminal_response for later binary input", async () => {
+    const { session } = createSessionForRemoteWorkspaceTests({
+      onBinaryMessage: vi.fn(),
+    });
+    const sendSessionMessage = vi.fn();
+
+    createRemoteAgentProxyMock.mockResolvedValue({
+      sendSessionMessage,
+      close: vi.fn(),
+      alive: true,
+      hostAlias: HOST_ALIAS,
+    });
+
+    await session.handleMessage({
+      type: "list_terminals_request",
+      cwd: SSH_CWD,
+      requestId: "req-prime-remote-proxy-slot-bind",
+    });
+
+    (session as any).handleRemoteAgentResponse(HOST_ALIAS, {
+      type: "subscribe_terminal_response",
+      payload: {
+        terminalId: "term-slot-bind",
+        slot: 0,
+        error: null,
+        requestId: "req-subscribe-remote-terminal",
+      },
+    });
+
+    sendSessionMessage.mockClear();
+
+    session.handleBinaryFrame({
+      slot: 0,
+      opcode: TerminalStreamOpcode.Input,
+      payload: Buffer.from("echo slot-bound\r"),
+    });
+
+    expect(sendSessionMessage).toHaveBeenCalledWith({
+      type: "terminal_input",
+      terminalId: "term-slot-bind",
+      message: {
+        type: "input",
+        data: "echo slot-bound\r",
+      },
     });
   });
 

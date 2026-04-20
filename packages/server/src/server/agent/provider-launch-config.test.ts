@@ -70,23 +70,24 @@ describe("applyProviderEnv", () => {
 
     const env = applyProviderEnv(base, runtime);
 
-    expect(env.PATH).toBe("/usr/bin");
+    expect(env.PATH).toBe("/custom/home/.local/bin:/custom/home/bin:/usr/bin");
     expect(env.HOME).toBe("/custom/home");
     expect(env.FOO).toBe("bar");
     expect(Object.keys(env).length).toBeGreaterThanOrEqual(3);
   });
 
   test("runtimeSettings env wins over base env", () => {
-    const base = { PATH: "/usr/bin" };
+    const base = { HOME: "/home/base", PATH: "/usr/bin" };
     const runtime: ProviderRuntimeSettings = { env: { PATH: "/custom/path" } };
 
     const env = applyProviderEnv(base, runtime);
 
-    expect(env.PATH).toBe("/custom/path");
+    expect(env.PATH).toBe("/home/base/.local/bin:/home/base/bin:/custom/path");
   });
 
   test("strips parent Claude Code session env vars", () => {
     const base = {
+      HOME: "/home/dev",
       PATH: "/usr/bin",
       CLAUDECODE: "1",
       CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
@@ -97,12 +98,30 @@ describe("applyProviderEnv", () => {
 
     const env = applyProviderEnv(base);
 
-    expect(env.PATH).toBe("/usr/bin");
+    expect(env.PATH).toBe("/home/dev/.local/bin:/home/dev/bin:/usr/bin");
     expect(env.CLAUDECODE).toBeUndefined();
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
     expect(env.CLAUDE_CODE_SSE_PORT).toBeUndefined();
     expect(env.CLAUDE_AGENT_SDK_VERSION).toBeUndefined();
     expect(env.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING).toBeUndefined();
+  });
+
+  test("prepends user-local bin directories to PATH when HOME is set", () => {
+    const env = applyProviderEnv({
+      HOME: "/home/dev",
+      PATH: "/usr/bin:/bin",
+    });
+
+    expect(env.PATH).toBe("/home/dev/.local/bin:/home/dev/bin:/usr/bin:/bin");
+  });
+
+  test("does not duplicate user-local bin directories already present in PATH", () => {
+    const env = applyProviderEnv({
+      HOME: "/home/dev",
+      PATH: "/home/dev/.local/bin:/usr/bin:/home/dev/bin:/bin",
+    });
+
+    expect(env.PATH).toBe("/home/dev/.local/bin:/usr/bin:/home/dev/bin:/bin");
   });
 });
 

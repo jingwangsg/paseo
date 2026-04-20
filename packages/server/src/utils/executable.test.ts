@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -13,6 +13,7 @@ import {
 const originalEnv = {
   PATH: process.env.PATH,
   PATHEXT: process.env.PATHEXT,
+  HOME: process.env.HOME,
 };
 const tempDirs: string[] = [];
 
@@ -58,6 +59,7 @@ function expectWindowsPathsEqual(actual: string | null, expected: string): void 
 afterEach(() => {
   process.env.PATH = originalEnv.PATH;
   process.env.PATHEXT = originalEnv.PATHEXT;
+  process.env.HOME = originalEnv.HOME;
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -75,6 +77,19 @@ describe("findExecutable", () => {
       prependPath(nonExecutableDir, executableDir);
 
       await expect(findExecutable("foo")).resolves.toBe(executable);
+    });
+
+    test("falls back to ~/.local/bin when PATH does not include the executable", async () => {
+      const homeDir = makeTempDir();
+      const emptyPathDir = makeTempDir();
+      const localBinDir = path.join(homeDir, ".local", "bin");
+      mkdirSync(localBinDir, { recursive: true });
+      const executable = writeExecutable(path.join(localBinDir, "claude"), "#!/bin/sh\necho 0.1\n");
+
+      process.env.HOME = homeDir;
+      process.env.PATH = emptyPathDir;
+
+      await expect(findExecutable("claude")).resolves.toBe(executable);
     });
   });
 

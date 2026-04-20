@@ -1980,7 +1980,46 @@ export class Session {
 
   public handleBinaryFrame(frame: TerminalStreamFrame): void {
     const activeStream = this.activeTerminalStreams.get(frame.slot);
-    if (!activeStream || !this.terminalManager) {
+    if (!activeStream) {
+      return;
+    }
+    if (isRemoteAgentId(activeStream.terminalId)) {
+      switch (frame.opcode) {
+        case TerminalStreamOpcode.Input: {
+          if (frame.payload.byteLength === 0) {
+            return;
+          }
+          const text = Buffer.from(frame.payload).toString("utf8");
+          if (!text) {
+            return;
+          }
+          this.forwardToRemoteTerminal(activeStream.terminalId, {
+            type: "terminal_input",
+            terminalId: activeStream.terminalId,
+            message: { type: "input", data: text },
+          });
+          return;
+        }
+
+        case TerminalStreamOpcode.Resize: {
+          const resize = decodeTerminalResizePayload(frame.payload);
+          if (!resize) {
+            return;
+          }
+          this.forwardToRemoteTerminal(activeStream.terminalId, {
+            type: "terminal_input",
+            terminalId: activeStream.terminalId,
+            message: { type: "resize", rows: resize.rows, cols: resize.cols },
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    }
+
+    if (!this.terminalManager) {
       return;
     }
     const terminal = this.terminalManager.getTerminal(activeStream.terminalId);
@@ -7848,6 +7887,9 @@ export class Session {
             onSessionMessage: (remoteMsg) => {
               this.handleRemoteAgentResponse(hostAlias, remoteMsg);
             },
+            onBinaryMessage: (data) => {
+              this.emitBinary(data);
+            },
           });
           this.remoteAgentProxies.set(hostAlias, proxy);
           return proxy;
@@ -8309,10 +8351,19 @@ export class Session {
       "Remote agent response received, forwarding to client",
     );
     const rewritten = rewriteRemoteSessionMessage(hostAlias, remoteMsg);
+    const rewrittenPayload = rewritten.payload as Record<string, unknown> | undefined;
+    if (
+      rewritten.type === "subscribe_terminal_response" &&
+      rewrittenPayload?.error === null &&
+      typeof rewrittenPayload.slot === "number" &&
+      typeof rewrittenPayload.terminalId === "string"
+    ) {
+      this.bindRemoteTerminalSlot(rewrittenPayload.terminalId, rewrittenPayload.slot);
+    }
     if (rewritten.type === "file_download_token_response") {
       const requestId =
-        typeof (rewritten.payload as Record<string, unknown> | undefined)?.requestId === "string"
-          ? ((rewritten.payload as Record<string, unknown>).requestId as string)
+        typeof rewrittenPayload?.requestId === "string"
+          ? (rewrittenPayload.requestId as string)
           : null;
       if (requestId) {
         const claimedByBridge = this.resolveRemoteDownloadTokenResponseBridge(hostAlias, rewritten);
@@ -8357,6 +8408,30 @@ export class Session {
     }
     proxy.sendSessionMessage(remoteMsg);
     return true;
+  }
+
+  private bindRemoteTerminalSlot(terminalId: string, slot: number): void {
+    if (!this.onBinaryMessage) {
+      return;
+    }
+
+    const existingTerminalSlot = this.terminalIdToSlot.get(terminalId);
+    if (typeof existingTerminalSlot === "number" && existingTerminalSlot !== slot) {
+      this.detachTerminalStream(terminalId, { emitExit: false });
+    }
+
+    const existingSlot = this.activeTerminalStreams.get(slot);
+    if (existingSlot && existingSlot.terminalId !== terminalId) {
+      this.detachTerminalStream(existingSlot.terminalId, { emitExit: false });
+    }
+
+    this.activeTerminalStreams.set(slot, {
+      terminalId,
+      slot,
+      unsubscribe: () => {},
+      needsSnapshot: false,
+    });
+    this.terminalIdToSlot.set(terminalId, slot);
   }
 
   /**

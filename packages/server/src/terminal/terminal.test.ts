@@ -1,8 +1,10 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   createTerminal,
   ensureNodePtySpawnHelperExecutableForCurrentPlatform,
+  loadNodePtyModuleForCurrentEnvironment,
   resolveDefaultTerminalShell,
+  resolveBundledPtyNativeModulePath,
   type TerminalSession,
 } from "./terminal.js";
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -110,6 +112,70 @@ describe("Terminal", () => {
       });
 
       expect(statSync(helperPath).mode & 0o111).toBe(0o111);
+    });
+
+    it("resolves a bundled pty.node next to the daemon bundle", () => {
+      const bundleRoot = mkdtempSync(join(tmpdir(), "terminal-bundled-pty-"));
+      temporaryDirs.push(bundleRoot);
+      writeFileSync(join(bundleRoot, "daemon.cjs"), "// bundle\n");
+      const prebuildDir = join(bundleRoot, "prebuilds", "linux-x64");
+      mkdirSync(prebuildDir, { recursive: true });
+      const nativeModulePath = join(prebuildDir, "pty.node");
+      writeFileSync(nativeModulePath, "");
+
+      expect(
+        resolveBundledPtyNativeModulePath({
+          baseDirs: [bundleRoot],
+          platform: "linux",
+          arch: "x64",
+        }),
+      ).toBe(nativeModulePath);
+    });
+
+    it("uses the installed node-pty module when it loads successfully", async () => {
+      const installedModule = {
+        spawn: vi.fn(),
+      };
+
+      await expect(
+        loadNodePtyModuleForCurrentEnvironment({
+          platform: "linux",
+          importNodePty: async () => installedModule,
+          createBundledUnixPtyModule: () => {
+            throw new Error("fallback should not be used");
+          },
+        }),
+      ).resolves.toBe(installedModule);
+    });
+
+    it("falls back to the bundled unix pty module when node-pty package loading fails", async () => {
+      const fallbackModule = {
+        spawn: vi.fn(),
+      };
+
+      await expect(
+        loadNodePtyModuleForCurrentEnvironment({
+          platform: "linux",
+          importNodePty: async () => {
+            throw new Error("node-pty package missing");
+          },
+          createBundledUnixPtyModule: () => fallbackModule,
+        }),
+      ).resolves.toBe(fallbackModule);
+    });
+
+    it("rethrows node-pty package loading failures on Windows", async () => {
+      await expect(
+        loadNodePtyModuleForCurrentEnvironment({
+          platform: "win32",
+          importNodePty: async () => {
+            throw new Error("node-pty package missing");
+          },
+          createBundledUnixPtyModule: () => {
+            throw new Error("fallback should not be used on Windows");
+          },
+        }),
+      ).rejects.toThrow("node-pty package missing");
     });
 
     it("uses cmd.exe-compatible default shell on Windows", () => {
